@@ -1,18 +1,85 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
-import { useColorScheme } from 'react-native';
+import { LaunchSplash } from "@/components/launch-splash";
+import { getTheme } from "@/constants/theme";
+import { AuthProvider, useAuth } from "@/contexts/auth-context";
+import {
+  OnboardingProvider,
+  useOnboarding,
+} from "@/contexts/onboarding-context";
+import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from "expo-router";
+import * as SplashScreen from "expo-splash-screen";
+import * as SystemUI from "expo-system-ui";
+import { useEffect } from "react";
+import { StatusBar as RNStatusBar, View, useColorScheme } from "react-native";
 
-import { AnimatedSplashOverlay } from '@/components/animated-icon';
-import AppTabs from '@/components/app-tabs';
+void SplashScreen.preventAutoHideAsync().catch(() => {});
 
-SplashScreen.preventAutoHideAsync();
-
-export default function TabLayout() {
-  const colorScheme = useColorScheme();
+export default function RootLayout() {
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <AnimatedSplashOverlay />
-      <AppTabs />
+    <AuthProvider>
+      <OnboardingProvider>
+        <RootNavigator />
+      </OnboardingProvider>
+    </AuthProvider>
+  );
+}
+
+function RootNavigator() {
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const { hasCompletedOnboarding, isLoading: onboardingLoading } =
+    useOnboarding();
+
+  const scheme = useColorScheme();
+  const colors = getTheme(scheme ?? "light");
+
+  useEffect(() => {
+    SystemUI.setBackgroundColorAsync(colors.background);
+  }, [colors.background]);
+
+  if (authLoading || onboardingLoading) {
+    // Keep the native splash visible until initialization finishes.
+    return null;
+  }
+
+  const baseTheme = scheme === "dark" ? DarkTheme : DefaultTheme;
+  const navTheme = {
+    ...baseTheme,
+    colors: { ...baseTheme.colors, background: colors.background },
+  };
+
+  return (
+    <ThemeProvider value={navTheme}>
+      {/* Root container: no padding, no insets, fills the whole window */}
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
+        <RNStatusBar
+          backgroundColor="transparent"
+          barStyle={scheme === "dark" ? "light-content" : "dark-content"}
+          translucent
+        />
+
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: colors.background },
+          }}
+        >
+          <Stack.Screen name="index" />
+
+          <Stack.Protected guard={!hasCompletedOnboarding}>
+            <Stack.Screen name="(onboarding)" />
+          </Stack.Protected>
+
+          <Stack.Protected guard={hasCompletedOnboarding && !isAuthenticated}>
+            <Stack.Screen name="(auth)/login" />
+          </Stack.Protected>
+
+          <Stack.Protected guard={hasCompletedOnboarding && isAuthenticated}>
+            <Stack.Screen name="(tabs)" />
+          </Stack.Protected>
+        </Stack>
+
+        {/* Last child of the root view, so it paints above everything */}
+        <LaunchSplash />
+      </View>
     </ThemeProvider>
   );
 }

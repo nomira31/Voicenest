@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "voicenote-app-ai",
+    "name": "VoiceNest",
     "slug": "voicenote-app-ai",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -8,16 +8,23 @@
     "scheme": "voicenoteappai",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/images/icon.png"
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#F8F5EA",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.nomira.voicenoteappai",
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+      ]
     },
     "web": {
       "output": "static",
@@ -28,15 +35,46 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "backgroundColor": "#F8F5EA",
+          "image": "./assets/images/icon.png",
+          "imageWidth": 170,
+          "resizeMode": "contain",
+          "dark": {
+            "backgroundColor": "#0F222D",
+            "image": "./assets/images/icon.png"
+          }
+        }
+      ],
+      "expo-audio",
+      "expo-sqlite",
+      "expo-sharing",
+      [
+        "react-native-audio-api",
+        {
+          "iosBackgroundMode": false,
+          "androidPermissions": [],
+          "androidForegroundService": false
+        }
+      ],
+      [
+        "react-native-alarm-scheduler",
+        {
+          "alarmKitUsageDescription": "Allow Voice Note to schedule alarms.",
+          "addExactAlarmPermission": true,
+          "addNotificationPermission": true,
+          "addUseExactAlarmPermission": false
         }
       ]
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "a7d96e5f-0a3d-48cf-936a-dd39c931f181"
+      }
     }
   }
 }
