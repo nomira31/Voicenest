@@ -6,9 +6,11 @@ import {
   useRecordingModal,
 } from "@/contexts/recording-modal-context";
 import { RecordingsProvider } from "@/contexts/recordings-context";
+import { useAlarmPlayback } from "@/hooks/use-alarm-playback";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { NativeTabs } from "expo-router/unstable-native-tabs";
 import { Modal, Platform } from "react-native";
+
 type TabConfig = {
   name: string;
   label: string;
@@ -46,6 +48,10 @@ const TABS: TabConfig[] = [
 function TabsContent() {
   const colors = useAppTheme();
   const { isRecordModalOpen, closeRecordModal } = useRecordingModal();
+
+  // Plays the linked recording when an alarm notification arrives or is tapped.
+  // Must live under RecordingsProvider, which it does.
+  useAlarmPlayback();
 
   const selectedColor = colors.primary;
   const unselectedColor = colors.textTertiary;
@@ -98,8 +104,9 @@ function TabsContent() {
           </NativeTabs.Trigger>
         ))}
       </NativeTabs>
-      
-<AudioPlayerDock bottomOffset={80} />
+
+      <AudioPlayerDock bottomOffset={80} />
+
       <Modal
         visible={isRecordModalOpen}
         animationType="slide"

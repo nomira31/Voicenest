@@ -45,6 +45,7 @@
           }
         }
       ],
+      "expo-notifications",
       "expo-audio",
       "expo-sqlite",
       "expo-sharing",

@@ -1,0 +1,173 @@
+diff --git a/node_modules/react-native-alarm-scheduler/app.plugin.js b/node_modules/react-native-alarm-scheduler/app.plugin.js
+index ce14182..407cb60 100644
+--- a/node_modules/react-native-alarm-scheduler/app.plugin.js
++++ b/node_modules/react-native-alarm-scheduler/app.plugin.js
+@@ -25,7 +25,7 @@ const withAlarmScheduler = (config, props = {}) => {
+   const iosAlarmSounds = normalizeIosAlarmSounds(props.iosAlarmSounds);
+ 
+   config = withAndroidManifest(config, (modConfig) => {
+-    const manifest = modConfig.modResults.manifest;
++    const manifest = modConfig.modResults;
+     if (addExactAlarmPermission) {
+       AndroidConfig.Permissions.addPermission(manifest, 'android.permission.SCHEDULE_EXACT_ALARM');
+     }
+diff --git a/node_modules/react-native-alarm-scheduler/android/src/main/java/expo/modules/alarm/AlarmSchedulerModule.kt b/node_modules/react-native-alarm-scheduler/android/src/main/java/expo/modules/alarm/AlarmSchedulerModule.kt
+index 2dcde84..47bcee8 100644
+--- a/node_modules/react-native-alarm-scheduler/android/src/main/java/expo/modules/alarm/AlarmSchedulerModule.kt
++++ b/node_modules/react-native-alarm-scheduler/android/src/main/java/expo/modules/alarm/AlarmSchedulerModule.kt
+@@ -57,6 +57,9 @@ class AndroidAlarmOptionsRecord : Record {
+   @Field var enforceVolume: Boolean? = null
+   @Field var restoreVolume: Boolean? = null
+   @Field var volume: Double? = null
++  @Field var gradualVolume: Boolean? = null
++  @Field var startingVolume: Double? = null
++  @Field var volumeRampDurationSeconds: Double? = null
+   @Field var fullScreen: Boolean? = null
+   @Field var fullScreenTarget: String? = null
+   @Field var launchUri: String? = null
+diff --git a/node_modules/react-native-alarm-scheduler/android/src/main/java/expo/modules/alarm/AlarmSchedulerOptions.kt b/node_modules/react-native-alarm-scheduler/android/src/main/java/expo/modules/alarm/AlarmSchedulerOptions.kt
+index 5fb0317..90d2238 100644
+--- a/node_modules/react-native-alarm-scheduler/android/src/main/java/expo/modules/alarm/AlarmSchedulerOptions.kt
++++ b/node_modules/react-native-alarm-scheduler/android/src/main/java/expo/modules/alarm/AlarmSchedulerOptions.kt
+@@ -41,6 +41,9 @@ internal data class AlarmSchedulerOptions(
+   val enforceVolume: Boolean,
+   val restoreVolume: Boolean,
+   val volume: Double,
++  val gradualVolume: Boolean,
++  val startingVolume: Double,
++  val volumeRampDurationSeconds: Double,
+   val fullScreen: Boolean,
+   val fullScreenTarget: String,
+   val launchUri: String?,
+@@ -63,6 +66,9 @@ internal data class AlarmSchedulerOptions(
+     .put("enforceVolume", enforceVolume)
+     .put("restoreVolume", restoreVolume)
+     .put("volume", volume)
++    .put("gradualVolume", gradualVolume)
++    .put("startingVolume", startingVolume)
++    .put("volumeRampDurationSeconds", volumeRampDurationSeconds)
+     .put("fullScreen", fullScreen)
+     .put("fullScreenTarget", fullScreenTarget)
+     .put("launchUri", launchUri ?: JSONObject.NULL)
+@@ -106,6 +112,9 @@ internal data class AlarmSchedulerOptions(
+         enforceVolume = android?.enforceVolume ?: true,
+         restoreVolume = android?.restoreVolume ?: true,
+         volume = min(1.0, max(0.0, android?.volume ?: 1.0)),
++        gradualVolume = android?.gradualVolume ?: false,
++        startingVolume = min(1.0, max(0.0, android?.startingVolume ?: 0.2)),
++        volumeRampDurationSeconds = min(300.0, max(1.0, android?.volumeRampDurationSeconds ?: 30.0)),
+         fullScreen = android?.fullScreen ?: true,
+         fullScreenTarget = normalizeFullScreenTarget(android?.fullScreenTarget),
+         launchUri = firstNonBlank(android?.launchUri),
+@@ -141,6 +150,9 @@ internal data class AlarmSchedulerOptions(
+         enforceVolume = json.optBoolean("enforceVolume", true),
+         restoreVolume = json.optBoolean("restoreVolume", true),
+         volume = min(1.0, max(0.0, json.optDouble("volume", 1.0))),
++        gradualVolume = json.optBoolean("gradualVolume", false),
++        startingVolume = min(1.0, max(0.0, json.optDouble("startingVolume", 0.2))),
++        volumeRampDurationSeconds = min(300.0, max(1.0, json.optDouble("volumeRampDurationSeconds", 30.0))),
+         fullScreen = json.optBoolean("fullScreen", true),
+         fullScreenTarget = normalizeFullScreenTarget(json.optStringOrNull("fullScreenTarget")),
+         launchUri = json.optStringOrNull("launchUri"),
+diff --git a/node_modules/react-native-alarm-scheduler/android/src/main/java/expo/modules/alarm/AlarmSchedulerRingService.kt b/node_modules/react-native-alarm-scheduler/android/src/main/java/expo/modules/alarm/AlarmSchedulerRingService.kt
+index f4a77ec..091cd0e 100644
+--- a/node_modules/react-native-alarm-scheduler/android/src/main/java/expo/modules/alarm/AlarmSchedulerRingService.kt
++++ b/node_modules/react-native-alarm-scheduler/android/src/main/java/expo/modules/alarm/AlarmSchedulerRingService.kt
+@@ -40,7 +40,8 @@ class AlarmSchedulerRingService : Service() {
+   private var wakeLock: PowerManager.WakeLock? = null
+   private var volumeObserver: ContentObserver? = null
+   private var previousAlarmVolume: Int? = null
+-  private var targetAlarmVolume: Int? = null
++  private var currentEnforcedAlarmVolume: Int? = null
++  private var volumeRampRunnable: Runnable? = null
+   private var timeoutRunnable: Runnable? = null
+   private val handler = Handler(Looper.getMainLooper())
+ 
+@@ -201,6 +202,8 @@ class AlarmSchedulerRingService : Service() {
+   private fun stopPlayback() {
+     timeoutRunnable?.let(handler::removeCallbacks)
+     timeoutRunnable = null
++    volumeRampRunnable?.let(handler::removeCallbacks)
++    volumeRampRunnable = null
+ 
+     runCatching {
+       mediaPlayer?.stop()
+@@ -279,13 +282,18 @@ class AlarmSchedulerRingService : Service() {
+     val audioManager = getSystemService(AudioManager::class.java) ?: return
+     val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_ALARM)
+     val target = (maxVolume * options.volume).roundToInt().coerceIn(1, maxVolume)
++    val start = if (options.gradualVolume) {
++      (maxVolume * options.startingVolume).roundToInt().coerceIn(1, target)
++    } else {
++      target
++    }
+     previousAlarmVolume = audioManager.getStreamVolume(AudioManager.STREAM_ALARM)
+-    targetAlarmVolume = target
+-    runCatching { audioManager.setStreamVolume(AudioManager.STREAM_ALARM, target, 0) }
++    currentEnforcedAlarmVolume = start
++    runCatching { audioManager.setStreamVolume(AudioManager.STREAM_ALARM, start, 0) }
+ 
+     val observer = object : ContentObserver(handler) {
+       override fun onChange(selfChange: Boolean) {
+-        val desired = targetAlarmVolume ?: return
++        val desired = currentEnforcedAlarmVolume ?: return
+         if (audioManager.getStreamVolume(AudioManager.STREAM_ALARM) < desired) {
+           runCatching { audioManager.setStreamVolume(AudioManager.STREAM_ALARM, desired, 0) }
+         }
+@@ -295,12 +303,38 @@ class AlarmSchedulerRingService : Service() {
+       contentResolver.registerContentObserver(Settings.System.CONTENT_URI, true, observer)
+       volumeObserver = observer
+     }
++
++    if (options.gradualVolume && target > start) {
++      val startedAt = android.os.SystemClock.elapsedRealtime()
++      val durationMillis = (options.volumeRampDurationSeconds * 1000).roundToLong().coerceAtLeast(1000L)
++      val ramp = object : Runnable {
++        override fun run() {
++          if (alarmId == null || currentEnforcedAlarmVolume == null) return
++          val elapsed = android.os.SystemClock.elapsedRealtime() - startedAt
++          val progress = (elapsed.toDouble() / durationMillis).coerceIn(0.0, 1.0)
++          val desired = (start + (target - start) * progress).roundToInt().coerceIn(start, target)
++          currentEnforcedAlarmVolume = desired
++          runCatching {
++            if (audioManager.getStreamVolume(AudioManager.STREAM_ALARM) != desired) {
++              audioManager.setStreamVolume(AudioManager.STREAM_ALARM, desired, 0)
++            }
++          }
++          if (progress < 1.0) {
++            handler.postDelayed(this, 500L)
++          } else {
++            volumeRampRunnable = null
++          }
++        }
++      }
++      volumeRampRunnable = ramp
++      handler.postDelayed(ramp, 500L)
++    }
+   }
+ 
+   private fun restoreAlarmVolume() {
+     val previous = previousAlarmVolume ?: return
+     previousAlarmVolume = null
+-    targetAlarmVolume = null
++    currentEnforcedAlarmVolume = null
+     if (options?.restoreVolume == false) {
+       return
+     }
+diff --git a/node_modules/react-native-alarm-scheduler/src/AlarmScheduler.types.ts b/node_modules/react-native-alarm-scheduler/src/AlarmScheduler.types.ts
+index 72d3cc3..85e062e 100644
+--- a/node_modules/react-native-alarm-scheduler/src/AlarmScheduler.types.ts
++++ b/node_modules/react-native-alarm-scheduler/src/AlarmScheduler.types.ts
+@@ -101,6 +101,12 @@ export type AndroidAlarmOptions = {
+   restoreVolume?: boolean;
+   /** Fraction of max alarm volume to ring at, 0–1. Defaults to `1`. */
+   volume?: number;
++  /** Ramp the alarm stream from startingVolume to volume over volumeRampDurationSeconds. Android only. */
++  gradualVolume?: boolean;
++  /** Starting fraction of max alarm volume when gradualVolume is enabled. Defaults to `0.2`. */
++  startingVolume?: number;
++  /** Duration of the volume ramp in seconds, from 1 to 300. Defaults to `30`. */
++  volumeRampDurationSeconds?: number;
+   /** Take over the screen (lock screen included) when the alarm fires. Defaults to `true`. */
+   fullScreen?: boolean;
+   /**

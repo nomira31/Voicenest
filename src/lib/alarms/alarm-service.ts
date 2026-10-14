@@ -1,9 +1,26 @@
+import {
+  deleteAlarmRow,
+  fetchAllAlarmRows,
+  upsertAlarmRow,
+  type AlarmRow,
+} from "@/lib/database";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import ExpoAlarm from "react-native-alarm-scheduler";
 import * as Notifications from "expo-notifications";
-import { Platform } from "react-native";
+import { PermissionsAndroid, Platform } from "react-native";
+import ExpoAlarm from "react-native-alarm-scheduler";
+import { logAlarmEvent } from "./alarm-log";
+import {
+  androidRingOptions,
+  normalizeSettings,
+  type AlarmSettings,
+} from "./alarm-settings";
+import {
+  ensureIosNotificationSound,
+  prepareAlarmSound,
+  releaseAlarmSound,
+} from "./alarm-sound";
 
-export type AlarmWeekday = 1 | 2 | 3 | 4 | 5 | 6 | 7; // ISO: Monday=1, Sunday=7
+export type AlarmWeekday = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 export type AlarmDelivery = "native" | "native-no-full-screen" | "notification";
 
 export type AppAlarm = {
@@ -17,14 +34,29 @@ export type AppAlarm = {
   notificationIds: string[];
   nextFireAt: number | null;
   createdAt: number;
+  recordingId?: string;
+  recordingUri?: string;
+  recordingTitle?: string;
+  soundUri?: string;
+  settings: AlarmSettings;
 };
 
-const STORAGE_KEY = "voice-note.alarms.v1";
-const CHANNEL_ID = "voice-note-alarms";
+export type CreateAlarmInput = {
+  title: string;
+  hour: number;
+  minute: number;
+  weekdays: AlarmWeekday[];
+  recordingId?: string;
+  recordingUri?: string;
+  recordingTitle?: string;
+  recordingDurationMillis?: number;
+  settings?: Partial<AlarmSettings>;
+};
 
-// Ensure alarms can be displayed if they fire while the app is foregrounded.
-// If the app already defines a notification handler in its root layout, merge
-// these foreground presentation flags into that handler instead of duplicating it.
+const LEGACY_STORAGE_KEY = "voice-note.alarms.v1";
+const CHANNEL_ID = "voice-note-alarms";
+const NATIVE_CALL_TIMEOUT_MS = 3000;
+
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowBanner: true,
@@ -34,12 +66,38 @@ Notifications.setNotificationHandler({
   }),
 });
 
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out`)), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
 function createUuid() {
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (character) => {
     const random = Math.floor(Math.random() * 16);
     const value = character === "x" ? random : (random & 0x3) | 0x8;
     return value.toString(16);
   });
+}
+
+function parseJsonArray<T>(value: unknown): T[] {
+  if (typeof value !== "string") return [];
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return Array.isArray(parsed) ? (parsed as T[]) : [];
+  } catch {
+    return [];
+  }
 }
 
 function normalizeAlarm(value: Partial<AppAlarm>): AppAlarm | null {
@@ -67,72 +125,298 @@ function normalizeAlarm(value: Partial<AppAlarm>): AppAlarm | null {
     notificationIds: value.notificationIds ?? [],
     nextFireAt: value.nextFireAt ?? null,
     createdAt: value.createdAt ?? Date.now(),
+    recordingId: typeof value.recordingId === "string" ? value.recordingId : undefined,
+    recordingUri: typeof value.recordingUri === "string" ? value.recordingUri : undefined,
+    recordingTitle: typeof value.recordingTitle === "string" ? value.recordingTitle : undefined,
+    soundUri: typeof value.soundUri === "string" ? value.soundUri : undefined,
+    settings: normalizeSettings(value.settings),
   };
 }
 
-async function readStoredAlarms(): Promise<AppAlarm[]> {
-  const stored = await AsyncStorage.getItem(STORAGE_KEY);
-  if (!stored) return [];
+function rowToAlarm(row: AlarmRow): AppAlarm | null {
+  return normalizeAlarm({
+    id: row.id,
+    title: row.title,
+    hour: row.hour,
+    minute: row.minute,
+    weekdays: parseJsonArray<AlarmWeekday>(row.weekdays),
+    enabled: row.enabled === 1,
+    delivery: row.delivery as AlarmDelivery,
+    notificationIds: parseJsonArray<string>(row.notificationIds),
+    nextFireAt: row.nextFireAt,
+    createdAt: row.createdAt,
+    recordingId: row.recordingId ?? undefined,
+    recordingUri: row.recordingUri ?? undefined,
+    recordingTitle: row.recordingTitle ?? undefined,
+    soundUri: row.soundUri ?? undefined,
+    settings: {
+      snoozeMinutes: row.snoozeMinutes,
+      volume: row.volume,
+      repeatRecording: row.repeatRecording === 1,
+      recordingDurationMillis: row.recordingDurationMillis ?? undefined,
+      gradualVolume: row.gradualVolume === 1,
+      startingVolume: row.startingVolume,
+      volumeRampDurationSeconds: row.volumeRampDurationSeconds,
+    },
+  });
+}
 
+function alarmToRow(alarm: AppAlarm): AlarmRow {
+  const settings = normalizeSettings(alarm.settings);
+  return {
+    id: alarm.id,
+    title: alarm.title,
+    hour: alarm.hour,
+    minute: alarm.minute,
+    weekdays: JSON.stringify(alarm.weekdays),
+    enabled: alarm.enabled ? 1 : 0,
+    delivery: alarm.delivery,
+    notificationIds: JSON.stringify(alarm.notificationIds),
+    nextFireAt: alarm.nextFireAt,
+    createdAt: alarm.createdAt,
+    recordingId: alarm.recordingId ?? null,
+    recordingUri: alarm.recordingUri ?? null,
+    recordingTitle: alarm.recordingTitle ?? null,
+    soundUri: alarm.soundUri ?? null,
+    snoozeMinutes: settings.snoozeMinutes,
+    volume: settings.volume,
+    repeatRecording: settings.repeatRecording ? 1 : 0,
+    recordingDurationMillis: settings.recordingDurationMillis ?? null,
+    gradualVolume: settings.gradualVolume ? 1 : 0,
+    startingVolume: settings.startingVolume,
+    volumeRampDurationSeconds: settings.volumeRampDurationSeconds,
+  };
+}
+
+async function saveAlarm(alarm: AppAlarm) {
+  await upsertAlarmRow(alarmToRow(alarm));
+}
+
+let migrationPromise: Promise<void> | null = null;
+
+function migrateLegacyAlarms(): Promise<void> {
+  if (!migrationPromise) {
+    migrationPromise = (async () => {
+      try {
+        const stored = await withTimeout(
+          AsyncStorage.getItem(LEGACY_STORAGE_KEY),
+          2000,
+          "Legacy alarm read",
+        );
+        if (!stored) return;
+
+        const parsed: unknown = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          for (const item of parsed) {
+            const alarm = normalizeAlarm(item as Partial<AppAlarm>);
+            if (alarm) await saveAlarm(alarm);
+          }
+        }
+        await AsyncStorage.removeItem(LEGACY_STORAGE_KEY);
+      } catch (error) {
+        console.warn("Legacy alarm migration skipped:", error);
+      }
+    })();
+  }
+  return migrationPromise;
+}
+
+async function readStoredAlarms(): Promise<AppAlarm[]> {
+  await migrateLegacyAlarms();
+  const rows = await fetchAllAlarmRows();
+  return rows
+    .map(rowToAlarm)
+    .filter((item): item is AppAlarm => item !== null)
+    .sort((a, b) => a.hour * 60 + a.minute - (b.hour * 60 + b.minute));
+}
+
+export async function getAlarmById(id: string): Promise<AppAlarm | null> {
+  const alarms = await readStoredAlarms();
+  return alarms.find((alarm) => alarm.id === id) ?? null;
+}
+
+export async function getStoredAlarms(): Promise<AppAlarm[]> {
+  return readStoredAlarms();
+}
+
+async function fetchNativeAlarmIds(): Promise<Set<string> | null> {
   try {
-    const parsed: unknown = JSON.parse(stored);
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .map((item) => normalizeAlarm(item as Partial<AppAlarm>))
-      .filter((item): item is AppAlarm => item !== null);
-  } catch {
-    return [];
+    const list = await withTimeout(
+      ExpoAlarm.getScheduledAlarmsAsync(),
+      NATIVE_CALL_TIMEOUT_MS,
+      "ExpoAlarm.getScheduledAlarmsAsync",
+    );
+    return new Set(list.map((alarm) => alarm.id));
+  } catch (error) {
+    console.warn("Native alarm list failed:", error);
+    return null;
   }
 }
 
-async function writeStoredAlarms(alarms: AppAlarm[]) {
-  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(alarms));
+async function fetchNotificationIds(): Promise<Set<string> | null> {
+  try {
+    const list = await withTimeout(
+      Notifications.getAllScheduledNotificationsAsync(),
+      NATIVE_CALL_TIMEOUT_MS,
+      "Notifications.getAllScheduledNotificationsAsync",
+    );
+    return new Set(list.map((request) => request.identifier));
+  } catch (error) {
+    console.warn("Notification list failed:", error);
+    return null;
+  }
 }
 
 export async function getAlarms(): Promise<AppAlarm[]> {
   const alarms = await readStoredAlarms();
   const now = Date.now();
-  let nativeIds = new Set<string>();
-  let notificationIds = new Set<string>();
 
-  try {
-    const [nativeAlarms, notificationRequests] = await Promise.all([
-      ExpoAlarm.getScheduledAlarmsAsync(),
-      Notifications.getAllScheduledNotificationsAsync(),
-    ]);
-    nativeIds = new Set(nativeAlarms.map((alarm) => alarm.id));
-    notificationIds = new Set(notificationRequests.map((request) => request.identifier));
-  } catch (error) {
-    // Keep the local list usable if the OS temporarily can't return schedules.
-    console.warn("Could not reconcile native alarms:", error);
-  }
+  const isDue = (alarm: AppAlarm) =>
+    alarm.enabled &&
+    alarm.weekdays.length === 0 &&
+    alarm.nextFireAt !== null &&
+    alarm.nextFireAt <= now;
 
-  let changed = false;
-  const updated = alarms.map((alarm) => {
-    if (!alarm.enabled || alarm.weekdays.length > 0 || alarm.nextFireAt === null || alarm.nextFireAt > now) {
-      return alarm;
+  const due = alarms.filter(isDue);
+  if (due.length === 0) return alarms;
+
+  const [nativeIds, notificationIds] = await Promise.all([
+    due.some((alarm) => alarm.delivery !== "notification") ? fetchNativeAlarmIds() : Promise.resolve(null),
+    due.some((alarm) => alarm.delivery === "notification") ? fetchNotificationIds() : Promise.resolve(null),
+  ]);
+
+  const result: AppAlarm[] = [];
+  for (const alarm of alarms) {
+    if (!isDue(alarm)) {
+      result.push(alarm);
+      continue;
     }
 
     const stillScheduled = alarm.delivery === "notification"
-      ? alarm.notificationIds.some((id) => notificationIds.has(id))
-      : nativeIds.has(alarm.id);
+      ? notificationIds
+        ? alarm.notificationIds.some((id) => notificationIds.has(id))
+        : null
+      : nativeIds
+        ? nativeIds.has(alarm.id)
+        : null;
 
-    // A one-time entry is marked inactive only if its delivery time passed
-    // and the OS no longer reports it as scheduled.
-    if (!stillScheduled) {
-      changed = true;
-      return { ...alarm, enabled: false, notificationIds: [] };
+    if (stillScheduled === false) {
+      const disabled: AppAlarm = { ...alarm, enabled: false, notificationIds: [] };
+      await saveAlarm(disabled);
+      result.push(disabled);
+    } else {
+      result.push(alarm);
     }
-    return alarm;
-  });
+  }
+  return result;
+}
 
-  if (changed) await writeStoredAlarms(updated);
-  return updated.sort((a, b) => a.hour * 60 + a.minute - (b.hour * 60 + b.minute));
+export async function restoreAlarms(): Promise<void> {
+  try {
+    const alarms = await readStoredAlarms();
+    const now = Date.now();
+    const candidates = alarms.filter(
+      (alarm) =>
+        alarm.enabled &&
+        !(alarm.weekdays.length === 0 && alarm.nextFireAt !== null && alarm.nextFireAt <= now),
+    );
+    if (candidates.length === 0) return;
+
+    const [nativeIds, notificationIds] = await Promise.all([
+      candidates.some((alarm) => alarm.delivery !== "notification") ? fetchNativeAlarmIds() : Promise.resolve(null),
+      candidates.some((alarm) => alarm.delivery === "notification") ? fetchNotificationIds() : Promise.resolve(null),
+    ]);
+
+    for (const alarm of candidates) {
+      const present = alarm.delivery === "notification"
+        ? notificationIds
+          ? alarm.notificationIds.some((id) => notificationIds.has(id))
+          : null
+        : nativeIds
+          ? nativeIds.has(alarm.id)
+          : null;
+
+      if (present !== false) continue;
+
+      try {
+        const restored: AppAlarm = {
+          ...alarm,
+          notificationIds: [],
+          nextFireAt: alarm.weekdays.length === 0
+            ? getNextOneTimeDate(alarm.hour, alarm.minute).getTime()
+            : null,
+        };
+        restored.delivery = await scheduleAlarmNative(restored, false);
+        await saveAlarm(restored);
+      } catch (error) {
+        console.warn("Could not restore alarm", alarm.id, error);
+      }
+    }
+  } catch (error) {
+    console.warn("Alarm restore skipped:", error);
+  }
+}
+
+export async function markAlarmFired(alarmId: string): Promise<void> {
+  try {
+    const alarm = await getAlarmById(alarmId);
+    if (!alarm || !alarm.enabled || alarm.weekdays.length > 0) return;
+    await saveAlarm({ ...alarm, enabled: false, notificationIds: [] });
+  } catch (error) {
+    console.warn("Could not mark alarm as fired:", error);
+  }
+}
+
+export async function isNativeAlarmRinging(alarmId: string): Promise<boolean | null> {
+  try {
+    const state = await withTimeout(
+      ExpoAlarm.getNativeAlarmDebugStateAsync(alarmId),
+      NATIVE_CALL_TIMEOUT_MS,
+      "getNativeAlarmDebugStateAsync",
+    );
+    return state.isRinging === true;
+  } catch {
+    return null;
+  }
+}
+
+export async function debugAlarm(alarmId: string) {
+  if (!__DEV__) return null;
+  try {
+    const state = await withTimeout(
+      ExpoAlarm.getNativeAlarmDebugStateAsync(alarmId),
+      NATIVE_CALL_TIMEOUT_MS,
+      "getNativeAlarmDebugStateAsync",
+    );
+    console.log("ALARM DEBUG", JSON.stringify(state, null, 2));
+    return state;
+  } catch (error) {
+    console.warn("ALARM DEBUG failed:", error);
+    return null;
+  }
+}
+
+export async function ensureAndroidNotificationPermission(prompt = true): Promise<boolean> {
+  if (Platform.OS !== "android" || Number(Platform.Version) < 33) return true;
+  try {
+    const permission = PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS;
+    if (await PermissionsAndroid.check(permission)) return true;
+    if (!prompt) return false;
+    const result = await PermissionsAndroid.request(permission);
+    return result === PermissionsAndroid.RESULTS.GRANTED;
+  } catch (error) {
+    console.warn("Notification permission request failed:", error);
+    return false;
+  }
 }
 
 export async function getAlarmPermissions() {
   try {
-    return await ExpoAlarm.getPermissionsAsync();
+    return await withTimeout(
+      ExpoAlarm.getPermissionsAsync(),
+      NATIVE_CALL_TIMEOUT_MS,
+      "Alarm permissions",
+    );
   } catch (error) {
     console.warn("Native alarm permissions are unavailable:", error);
     return null;
@@ -140,11 +424,10 @@ export async function getAlarmPermissions() {
 }
 
 export async function requestAlarmPermissions() {
+  await ensureAndroidNotificationPermission();
   const permissions = await ExpoAlarm.requestPermissionsAsync();
 
   if (Platform.OS === "android" && permissions.canUseFullScreenIntent === false) {
-    // Full-screen permission is separate on Android 14+. The alarm may still
-    // sound, but the lock-screen ring UI may be replaced by a heads-up alert.
     await ExpoAlarm.openFullScreenIntentSettingsAsync().catch(() => false);
   }
 
@@ -159,7 +442,6 @@ function getNextOneTimeDate(hour: number, minute: number) {
 }
 
 function isoWeekdayToNotificationWeekday(weekday: AlarmWeekday) {
-  // expo-notifications calendar triggers use Sunday=1, Monday=2, ... Saturday=7.
   return weekday === 7 ? 1 : weekday + 1;
 }
 
@@ -185,12 +467,21 @@ async function ensureNotificationPermission() {
 async function scheduleNotificationFallback(alarm: AppAlarm): Promise<string[]> {
   await ensureNotificationPermission();
 
+  const customSound = alarm.soundUri && alarm.recordingId
+    ? await ensureIosNotificationSound(alarm.soundUri, alarm.recordingId)
+    : null;
+
   const ids: string[] = [];
   const commonContent = {
     title: alarm.title || "Alarm",
-    body: "It's time.",
-    sound: "default" as const,
-    data: { alarmId: alarm.id, source: "voice-note-alarm" },
+    body: alarm.recordingId ? "Tap to play your recording." : "It's time.",
+    sound: customSound ?? ("default" as const),
+    data: {
+      alarmId: alarm.id,
+      source: "voice-note-alarm",
+      recordingId: alarm.recordingId ?? null,
+      recordingUri: alarm.recordingUri ?? null,
+    },
   };
 
   if (alarm.weekdays.length === 0) {
@@ -223,31 +514,39 @@ async function scheduleNotificationFallback(alarm: AppAlarm): Promise<string[]> 
   return ids;
 }
 
-async function scheduleAlarmNative(alarm: AppAlarm): Promise<AlarmDelivery> {
+async function scheduleAlarmNative(alarm: AppAlarm, interactive = true): Promise<AlarmDelivery> {
+  const canNotify = await ensureAndroidNotificationPermission(interactive);
+  if (!interactive && !canNotify) throw new Error("Notification permission not granted.");
+
   let permissions = await ExpoAlarm.getPermissionsAsync();
 
-  if (Platform.OS === "android" && !permissions.canScheduleExactAlarms) {
-    permissions = await ExpoAlarm.requestPermissionsAsync();
-  } else if (Platform.OS === "ios" && permissions.status !== "authorized" && permissions.status !== "unavailable") {
-    permissions = await ExpoAlarm.requestPermissionsAsync();
+  if (interactive) {
+    if (Platform.OS === "android" && !permissions.canScheduleExactAlarms) {
+      permissions = await ExpoAlarm.requestPermissionsAsync();
+    } else if (Platform.OS === "ios" && permissions.status !== "authorized" && permissions.status !== "unavailable") {
+      permissions = await ExpoAlarm.requestPermissionsAsync();
+    }
+  } else if (
+    (Platform.OS === "android" && !permissions.canScheduleExactAlarms) ||
+    (Platform.OS === "ios" && permissions.status !== "authorized")
+  ) {
+    throw new Error("Alarm permission not granted.");
   }
 
   if (Platform.OS === "android" && !permissions.canScheduleExactAlarms) {
-    const notificationIds = await scheduleNotificationFallback(alarm);
-    alarm.notificationIds = notificationIds;
+    alarm.notificationIds = await scheduleNotificationFallback(alarm);
     return "notification";
   }
 
   if (Platform.OS === "ios" && permissions.status !== "authorized") {
-    // On iOS versions without AlarmKit, use a local notification fallback.
-    // It can notify with sound, but it is not a persistent full-screen alarm.
-    const notificationIds = await scheduleNotificationFallback(alarm);
-    alarm.notificationIds = notificationIds;
+    alarm.notificationIds = await scheduleNotificationFallback(alarm);
     return "notification";
   }
 
+  const sound = alarm.soundUri ? { soundUri: alarm.soundUri } : {};
+
   await ExpoAlarm.resetNativeAlarmCompletionAsync(alarm.id).catch(() => undefined);
-  await ExpoAlarm.scheduleAlarmAsync({
+  const scheduled = await ExpoAlarm.scheduleAlarmAsync({
     id: alarm.id,
     hour: alarm.hour,
     minute: alarm.minute,
@@ -260,22 +559,25 @@ async function scheduleAlarmNative(alarm: AppAlarm): Promise<AlarmDelivery> {
       secondaryButtonTitle: "Open app",
       stopIntentBehavior: "recordOnly",
       secondaryButtonBehavior: "openApp",
-      metadata: { alarmId: alarm.id },
+      metadata: { alarmId: alarm.id, recordingId: alarm.recordingId ?? "" },
+      ...sound,
     },
     android: {
       alertTitle: alarm.title,
-      alertBody: "It's time.",
+      alertBody: alarm.recordingId ? "Your recording is playing." : "It's time.",
       alertActionMode: "default",
-      stopButtonTitle: "Stop",
-      secondaryButtonTitle: "Open app",
-      stopIntentBehavior: "recordOnly",
-      secondaryButtonBehavior: "openApp",
+      metadata: { alarmId: alarm.id, recordingId: alarm.recordingId ?? "" },
       vibrate: true,
       fullScreen: true,
       fullScreenTarget: "native",
-      maxRingDurationSeconds: 0,
+      ...sound,
+      ...androidRingOptions(alarm.settings),
     },
   });
+
+  void logAlarmEvent(
+    `SCHEDULED ${alarm.hour}:${String(alarm.minute).padStart(2, "0")} armedFor=${new Date(scheduled.timestamp).toLocaleTimeString()} now=${new Date().toLocaleTimeString()}`,
+  );
 
   if (Platform.OS === "android" && permissions.canUseFullScreenIntent === false) {
     return "native-no-full-screen";
@@ -283,18 +585,46 @@ async function scheduleAlarmNative(alarm: AppAlarm): Promise<AlarmDelivery> {
   return "native";
 }
 
-export async function createAlarm(input: {
-  title: string;
-  hour: number;
-  minute: number;
-  weekdays: AlarmWeekday[];
-}): Promise<{ alarm: AppAlarm; notice?: string }> {
-  const title = input.title.trim() || "Voice Note Alarm";
+function buildNotice(alarm: AppAlarm, canNotify: boolean, soundFailed: boolean): string | undefined {
+  const notices: string[] = [];
+  if (!canNotify) {
+    notices.push("Notifications are turned off for this app, so the alarm may not show or play. Enable them in Settings → Apps → VoiceNest → Notifications.");
+  }
+  if (soundFailed) {
+    notices.push("Your recording couldn't be prepared as an alarm sound, so the default alarm sound will be used.");
+  }
+  if (alarm.delivery === "notification") {
+    notices.push("This device is using a standard scheduled notification. It can sound while the app is closed, but snooze, volume and repeat settings only apply to full alarms.");
+  } else if (alarm.delivery === "native-no-full-screen") {
+    notices.push("The alarm is scheduled, but Android full-screen access is disabled. It may appear as a heads-up alert instead of taking over the lock screen.");
+  }
+  return notices.length > 0 ? notices.join(" ") : undefined;
+}
+
+export async function createAlarm(input: CreateAlarmInput): Promise<{ alarm: AppAlarm; notice?: string }> {
+  const title = input.title.trim() || input.recordingTitle?.trim() || "Voice Note Alarm";
   if (!Number.isInteger(input.hour) || input.hour < 0 || input.hour > 23) {
     throw new Error("Choose a valid hour.");
   }
   if (!Number.isInteger(input.minute) || input.minute < 0 || input.minute > 59) {
     throw new Error("Choose a valid minute.");
+  }
+
+  const canNotify = await ensureAndroidNotificationPermission();
+
+  let soundUri: string | undefined;
+  let soundFailed = false;
+  if (input.recordingId && input.recordingUri) {
+    try {
+      soundUri = await prepareAlarmSound({
+        id: input.recordingId,
+        uri: input.recordingUri,
+        durationMillis: input.recordingDurationMillis ?? 0,
+      });
+    } catch (error) {
+      console.warn("Could not prepare alarm sound:", error);
+      soundFailed = true;
+    }
   }
 
   const weekdays = [...new Set(input.weekdays)].sort((a, b) => a - b);
@@ -310,19 +640,101 @@ export async function createAlarm(input: {
     notificationIds: [],
     nextFireAt: oneTimeDate?.getTime() ?? null,
     createdAt: Date.now(),
+    recordingId: input.recordingId,
+    recordingUri: input.recordingUri,
+    recordingTitle: input.recordingTitle ?? title,
+    soundUri,
+    settings: normalizeSettings({
+      ...input.settings,
+      recordingDurationMillis: input.recordingDurationMillis,
+    }),
   };
 
   alarm.delivery = await scheduleAlarmNative(alarm);
-  const stored = await readStoredAlarms();
-  await writeStoredAlarms([alarm, ...stored]);
+  await saveAlarm(alarm);
 
-  let notice: string | undefined;
+  return { alarm, notice: buildNotice(alarm, canNotify, soundFailed) };
+}
+
+async function cancelScheduled(alarm: AppAlarm) {
   if (alarm.delivery === "notification") {
-    notice = "This device is using a standard scheduled notification. It can sound while the app is closed, but it may not behave like a continuous full-screen alarm.";
-  } else if (alarm.delivery === "native-no-full-screen") {
-    notice = "The alarm is scheduled, but Android full-screen access is disabled. It may appear as a heads-up alert instead of taking over the lock screen.";
+    await Promise.all(
+      alarm.notificationIds.map((id) => Notifications.cancelScheduledNotificationAsync(id).catch(() => undefined)),
+    );
+  } else {
+    await ExpoAlarm.cancelNativeAlarmBackupAsync(alarm.id).catch(() => undefined);
+    await ExpoAlarm.completeNativeAlarmAsync(alarm.id).catch(() => undefined);
+    await ExpoAlarm.cancelAlarmAsync(alarm.id).catch(() => undefined);
   }
-  return { alarm, notice };
+}
+
+export async function updateAlarm(
+  existing: AppAlarm,
+  input: CreateAlarmInput,
+): Promise<{ alarm: AppAlarm; notice?: string }> {
+  const title = input.title.trim() || input.recordingTitle?.trim() || existing.title;
+  if (!Number.isInteger(input.hour) || input.hour < 0 || input.hour > 23) {
+    throw new Error("Choose a valid hour.");
+  }
+  if (!Number.isInteger(input.minute) || input.minute < 0 || input.minute > 59) {
+    throw new Error("Choose a valid minute.");
+  }
+
+  const canNotify = await ensureAndroidNotificationPermission();
+
+  const recordingChanged = input.recordingId !== existing.recordingId;
+  let soundUri = recordingChanged ? undefined : existing.soundUri;
+  let soundFailed = false;
+  if (input.recordingId && input.recordingUri && (recordingChanged || !soundUri)) {
+    try {
+      soundUri = await prepareAlarmSound({
+        id: input.recordingId,
+        uri: input.recordingUri,
+        durationMillis: input.recordingDurationMillis ?? 0,
+      });
+    } catch (error) {
+      console.warn("Could not prepare alarm sound:", error);
+      soundFailed = true;
+    }
+  }
+
+  if (existing.enabled) await cancelScheduled(existing);
+
+  const weekdays = [...new Set(input.weekdays)].sort((a, b) => a - b);
+  const oneTimeDate = weekdays.length === 0 ? getNextOneTimeDate(input.hour, input.minute) : null;
+  const alarm: AppAlarm = {
+    ...existing,
+    title,
+    hour: input.hour,
+    minute: input.minute,
+    weekdays,
+    enabled: true,
+    delivery: "notification",
+    notificationIds: [],
+    nextFireAt: oneTimeDate?.getTime() ?? null,
+    recordingId: input.recordingId,
+    recordingUri: input.recordingUri,
+    recordingTitle: input.recordingTitle ?? title,
+    soundUri,
+    settings: normalizeSettings({
+      ...existing.settings,
+      ...input.settings,
+      recordingDurationMillis:
+        input.recordingDurationMillis ?? existing.settings?.recordingDurationMillis,
+    }),
+  };
+
+  alarm.delivery = await scheduleAlarmNative(alarm);
+  await saveAlarm(alarm);
+
+  if (recordingChanged && existing.recordingId) {
+    const all = await readStoredAlarms();
+    if (!all.some((item) => item.recordingId === existing.recordingId)) {
+      releaseAlarmSound(existing.recordingId);
+    }
+  }
+
+  return { alarm, notice: buildNotice(alarm, canNotify, soundFailed) };
 }
 
 export async function setAlarmEnabled(alarm: AppAlarm, enabled: boolean): Promise<AppAlarm> {
@@ -339,40 +751,25 @@ export async function setAlarmEnabled(alarm: AppAlarm, enabled: boolean): Promis
     };
 
     updated.delivery = await scheduleAlarmNative(updated);
-    const stored = await readStoredAlarms();
-    await writeStoredAlarms(stored.map((item) => item.id === alarm.id ? updated : item));
+    await saveAlarm(updated);
     return updated;
   }
 
-  if (alarm.delivery === "notification") {
-    await Promise.all(
-      alarm.notificationIds.map((id) => Notifications.cancelScheduledNotificationAsync(id).catch(() => undefined)),
-    );
-  } else {
-    await ExpoAlarm.cancelNativeAlarmBackupAsync(alarm.id).catch(() => undefined);
-    await ExpoAlarm.completeNativeAlarmAsync(alarm.id).catch(() => undefined);
-    await ExpoAlarm.cancelAlarmAsync(alarm.id);
-  }
-
+  await cancelScheduled(alarm);
   const updated: AppAlarm = { ...alarm, enabled: false, notificationIds: [] };
-  const stored = await readStoredAlarms();
-  await writeStoredAlarms(stored.map((item) => item.id === alarm.id ? updated : item));
+  await saveAlarm(updated);
   return updated;
 }
 
 export async function deleteAlarm(alarm: AppAlarm) {
-  if (alarm.enabled) {
-    if (alarm.delivery === "notification") {
-      await Promise.all(
-        alarm.notificationIds.map((id) => Notifications.cancelScheduledNotificationAsync(id).catch(() => undefined)),
-      );
-    } else {
-      await ExpoAlarm.cancelNativeAlarmBackupAsync(alarm.id).catch(() => undefined);
-      await ExpoAlarm.completeNativeAlarmAsync(alarm.id).catch(() => undefined);
-      await ExpoAlarm.cancelAlarmAsync(alarm.id).catch(() => undefined);
+  if (alarm.enabled) await cancelScheduled(alarm);
+
+  await deleteAlarmRow(alarm.id);
+
+  if (alarm.recordingId) {
+    const remaining = await readStoredAlarms();
+    if (!remaining.some((item) => item.recordingId === alarm.recordingId)) {
+      releaseAlarmSound(alarm.recordingId);
     }
   }
-
-  const remaining = (await readStoredAlarms()).filter((item) => item.id !== alarm.id);
-  await writeStoredAlarms(remaining);
 }

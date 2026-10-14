@@ -1,0 +1,294 @@
+diff --git a/src/app/(tabs)/schedule/index.tsx b/src/app/(tabs)/schedule/index.tsx
+index 0f80f2e..30391b9 100644
+--- a/src/app/(tabs)/schedule/index.tsx
++++ b/src/app/(tabs)/schedule/index.tsx
+@@ -214,6 +214,9 @@ function AlarmEditor({
+   const initial = editing?.settings ?? DEFAULT_ALARM_SETTINGS;
+   const [snoozeMinutes, setSnoozeMinutes] = useState(initial.snoozeMinutes);
+   const [volume, setVolume] = useState(nearestVolumeLevel(initial.volume).value);
++  const [gradualVolume, setGradualVolume] = useState(initial.gradualVolume);
++  const [startingVolume, setStartingVolume] = useState(initial.startingVolume);
++  const [volumeRampDurationSeconds, setVolumeRampDurationSeconds] = useState(initial.volumeRampDurationSeconds);
+   const [repeatRecording, setRepeatRecording] = useState(initial.repeatRecording);
+   const [saving, setSaving] = useState(false);
+   const [error, setError] = useState<string | null>(null);
+@@ -241,7 +244,14 @@ function AlarmEditor({
+         hour,
+         minute,
+         weekdays,
+-        settings: { snoozeMinutes, volume, repeatRecording },
++        settings: {
++          snoozeMinutes,
++          volume,
++          repeatRecording,
++          gradualVolume,
++          startingVolume,
++          volumeRampDurationSeconds,
++        },
+       },
+       target,
+     );
+@@ -539,7 +549,77 @@ function AlarmEditor({
+                         );
+                       })}
+                     </View>
+-                    <Text style={styles.hint}>Held steady while the alarm rings, so the volume keys can't lower it.</Text>
++                    <Text style={styles.hint}>
++                      {gradualVolume
++                        ? "The alarm starts quietly and increases to the selected volume."
++                        : "The selected volume is maintained while the alarm rings."}
++                    </Text>
++
++                    <View style={styles.toggleRow}>
++                      <View style={styles.flexFill}>
++                        <Text style={styles.toggleTitle}>Gradually increase volume</Text>
++                        <Text style={styles.rowMeta}>
++                          {gradualVolume
++                            ? `Starts at ${Math.round(startingVolume * 100)}% and reaches ${Math.round(volume * 100)}% in ${volumeRampDurationSeconds} seconds`
++                            : "Play at the selected volume immediately"}
++                        </Text>
++                      </View>
++                      <Switch
++                        value={gradualVolume}
++                        onValueChange={setGradualVolume}
++                        trackColor={{ false: colors.borderStrong, true: colors.tealStrong }}
++                        thumbColor={gradualVolume ? colors.backgroundElevated : colors.backgroundSubtle}
++                        accessibilityLabel="Gradually increase alarm volume"
++                      />
++                    </View>
++
++                    {gradualVolume ? (
++                      <>
++                        <Text style={styles.sectionLabel}>Starting volume</Text>
++                        <View style={styles.optionRow}>
++                          {[0.1, 0.2, 0.3, 0.4].map((level) => {
++                            const active = startingVolume === level;
++                            return (
++                              <TouchableOpacity
++                                key={level}
++                                style={[styles.option, active && styles.optionActive]}
++                                onPress={() => setStartingVolume(level)}
++                                accessibilityRole="button"
++                                accessibilityState={{ selected: active }}
++                                accessibilityLabel={`Start at ${Math.round(level * 100)} percent`}
++                              >
++                                <Text style={[styles.optionText, active && styles.optionTextActive]}>
++                                  {Math.round(level * 100)}%
++                                </Text>
++                              </TouchableOpacity>
++                            );
++                          })}
++                        </View>
++
++                        <Text style={styles.sectionLabel}>Time to reach full volume</Text>
++                        <View style={styles.optionRow}>
++                          {[15, 30, 60].map((seconds) => {
++                            const active = volumeRampDurationSeconds === seconds;
++                            return (
++                              <TouchableOpacity
++                                key={seconds}
++                                style={[styles.option, active && styles.optionActive]}
++                                onPress={() => setVolumeRampDurationSeconds(seconds)}
++                                accessibilityRole="button"
++                                accessibilityState={{ selected: active }}
++                              >
++                                <Text style={[styles.optionText, active && styles.optionTextActive]}>
++                                  {seconds} sec
++                                </Text>
++                              </TouchableOpacity>
++                            );
++                          })}
++                        </View>
++                        <Text style={styles.hint}>
++                          The alarm volume rises gradually while it rings. Your selected target volume is {Math.round(volume * 100)}%.
++                        </Text>
++                      </>
++                    ) : null}
+ 
+                     <View style={styles.toggleRow}>
+                       <View style={styles.flexFill}>
+diff --git a/src/lib/alarms/alarm-service.ts b/src/lib/alarms/alarm-service.ts
+index 7d43b85..cc97deb 100644
+--- a/src/lib/alarms/alarm-service.ts
++++ b/src/lib/alarms/alarm-service.ts
+@@ -154,6 +154,9 @@ function rowToAlarm(row: AlarmRow): AppAlarm | null {
+       volume: row.volume,
+       repeatRecording: row.repeatRecording === 1,
+       recordingDurationMillis: row.recordingDurationMillis ?? undefined,
++      gradualVolume: row.gradualVolume === 1,
++      startingVolume: row.startingVolume,
++      volumeRampDurationSeconds: row.volumeRampDurationSeconds,
+     },
+   });
+ }
+@@ -179,6 +182,9 @@ function alarmToRow(alarm: AppAlarm): AlarmRow {
+     volume: settings.volume,
+     repeatRecording: settings.repeatRecording ? 1 : 0,
+     recordingDurationMillis: settings.recordingDurationMillis ?? null,
++    gradualVolume: settings.gradualVolume ? 1 : 0,
++    startingVolume: settings.startingVolume,
++    volumeRampDurationSeconds: settings.volumeRampDurationSeconds,
+   };
+ }
+ 
+diff --git a/src/lib/alarms/alarm-settings.ts b/src/lib/alarms/alarm-settings.ts
+index 5814f23..9e6753b 100644
+--- a/src/lib/alarms/alarm-settings.ts
++++ b/src/lib/alarms/alarm-settings.ts
+@@ -9,6 +9,7 @@
+ //                     alarm after N minutes (stopIntentBehavior "rescheduleImmediate" +
+ //                     backupDelaySeconds). "Dismiss" opens the app, which ends the alarm.
+ //   Volume            Android: fraction of the alarm stream volume, pinned while ringing.
++//   Gradual volume    Android: native ring service ramps the alarm stream from startingVolume to volume.
+ //   Repeat recording  Android: the ring service always loops the audio, so "play once" is done
+ //                     by ending the ring right after the recording finishes.
+ // iOS (AlarmKit) exposes none of these, so the UI hides them there.
+@@ -22,6 +23,12 @@ export type AlarmSettings = {
+   volume: number;
+   /** true = loop until you respond, false = play once. */
+   repeatRecording: boolean;
++  /** Start quietly and raise the alarm volume over time on Android. */
++  gradualVolume: boolean;
++  /** Starting alarm-stream volume as a fraction of the device maximum. */
++  startingVolume: number;
++  /** Seconds taken to reach the selected target volume. */
++  volumeRampDurationSeconds: number;
+   /** Needed to work out how long "play once" should ring. */
+   recordingDurationMillis?: number;
+ };
+@@ -32,6 +39,9 @@ export const DEFAULT_ALARM_SETTINGS: AlarmSettings = {
+   snoozeMinutes: 10,
+   volume: 1,
+   repeatRecording: true,
++  gradualVolume: true,
++  startingVolume: 0.1,
++  volumeRampDurationSeconds: 30,
+ };
+ 
+ export const SNOOZE_OPTIONS = [0, 5, 10, 15] as const;
+@@ -49,6 +59,8 @@ export function normalizeSettings(value?: Partial<AlarmSettings> | null): AlarmS
+   const snooze = Number(value?.snoozeMinutes);
+   const volume = Number(value?.volume);
+   const duration = Number(value?.recordingDurationMillis);
++  const startingVolume = Number(value?.startingVolume);
++  const rampDuration = Number(value?.volumeRampDurationSeconds);
+   return {
+     snoozeMinutes: Number.isFinite(snooze) && snooze >= 0 && snooze <= 60
+       ? Math.round(snooze)
+@@ -59,6 +71,15 @@ export function normalizeSettings(value?: Partial<AlarmSettings> | null): AlarmS
+     repeatRecording: typeof value?.repeatRecording === "boolean"
+       ? value.repeatRecording
+       : DEFAULT_ALARM_SETTINGS.repeatRecording,
++    gradualVolume: typeof value?.gradualVolume === "boolean"
++      ? value.gradualVolume
++      : DEFAULT_ALARM_SETTINGS.gradualVolume,
++    startingVolume: Number.isFinite(startingVolume) && startingVolume > 0
++      ? Math.min(1, Math.max(0.05, startingVolume))
++      : DEFAULT_ALARM_SETTINGS.startingVolume,
++    volumeRampDurationSeconds: Number.isFinite(rampDuration) && rampDuration >= 5 && rampDuration <= 180
++      ? Math.round(rampDuration)
++      : DEFAULT_ALARM_SETTINGS.volumeRampDurationSeconds,
+     recordingDurationMillis: Number.isFinite(duration) && duration > 0 ? duration : undefined,
+   };
+ }
+@@ -73,7 +94,9 @@ export function nearestVolumeLevel(volume: number) {
+ export function describeSettings(settings: AlarmSettings): string {
+   const parts = [
+     settings.snoozeMinutes > 0 ? `Snooze ${settings.snoozeMinutes} min` : "No snooze",
+-    `${nearestVolumeLevel(settings.volume).label} volume`,
++    settings.gradualVolume
++      ? `Gradual volume (${settings.volumeRampDurationSeconds}s)`
++      : `${nearestVolumeLevel(settings.volume).label} volume`,
+     settings.repeatRecording ? "Repeats" : "Plays once",
+   ];
+   return parts.join(", ");
+@@ -95,6 +118,9 @@ export function androidRingOptions(settings: AlarmSettings) {
+ 
+   return {
+     volume: settings.volume,
++    gradualVolume: settings.gradualVolume,
++    startingVolume: settings.startingVolume,
++    volumeRampDurationSeconds: settings.volumeRampDurationSeconds,
+     enforceVolume: true,
+     restoreVolume: true,
+     maxRingDurationSeconds,
+diff --git a/src/lib/database.ts b/src/lib/database.ts
+index 0b038bf..21e25e6 100644
+--- a/src/lib/database.ts
++++ b/src/lib/database.ts
+@@ -31,6 +31,13 @@ export interface AlarmRow {
+   recordingUri: string | null;
+   recordingTitle: string | null;
+   soundUri: string | null;
++  snoozeMinutes: number;
++  volume: number;
++  repeatRecording: number;
++  recordingDurationMillis: number | null;
++  gradualVolume: number;
++  startingVolume: number;
++  volumeRampDurationSeconds: number;
+ }
+ 
+ let dbInstance: SQLite.SQLiteDatabase | null = null;
+@@ -69,9 +76,35 @@ export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
+           recordingId TEXT,
+           recordingUri TEXT,
+           recordingTitle TEXT,
+-          soundUri TEXT
++          soundUri TEXT,
++          snoozeMinutes INTEGER NOT NULL DEFAULT 10,
++          volume REAL NOT NULL DEFAULT 1,
++          repeatRecording INTEGER NOT NULL DEFAULT 1,
++          recordingDurationMillis INTEGER,
++          gradualVolume INTEGER NOT NULL DEFAULT 1,
++          startingVolume REAL NOT NULL DEFAULT 0.1,
++          volumeRampDurationSeconds INTEGER NOT NULL DEFAULT 30
+         );
+       `);
++
++      const alarmColumns = await db.getAllAsync<{ name: string }>("PRAGMA table_info(alarms);");
++      const existingColumns = new Set(alarmColumns.map((column) => column.name));
++      const migrations: Array<[string, string]> = [
++        ["snoozeMinutes", "INTEGER NOT NULL DEFAULT 10"],
++        ["volume", "REAL NOT NULL DEFAULT 1"],
++        ["repeatRecording", "INTEGER NOT NULL DEFAULT 1"],
++        ["recordingDurationMillis", "INTEGER"],
++        ["gradualVolume", "INTEGER NOT NULL DEFAULT 1"],
++        ["startingVolume", "REAL NOT NULL DEFAULT 0.1"],
++        ["volumeRampDurationSeconds", "INTEGER NOT NULL DEFAULT 30"],
++      ];
++
++      for (const [name, definition] of migrations) {
++        if (!existingColumns.has(name)) {
++          await db.execAsync(`ALTER TABLE alarms ADD COLUMN ${name} ${definition};`);
++        }
++      }
++
+       dbInstance = db;
+       return db;
+     })().catch((error) => {
+@@ -143,8 +176,8 @@ export async function upsertAlarmRow(row: AlarmRow): Promise<void> {
+   const db = await getDatabase();
+   await db.runAsync(
+     `INSERT OR REPLACE INTO alarms
+-      (id, title, hour, minute, weekdays, enabled, delivery, notificationIds, nextFireAt, createdAt, recordingId, recordingUri, recordingTitle, soundUri)
+-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
++      (id, title, hour, minute, weekdays, enabled, delivery, notificationIds, nextFireAt, createdAt, recordingId, recordingUri, recordingTitle, soundUri, snoozeMinutes, volume, repeatRecording, recordingDurationMillis, gradualVolume, startingVolume, volumeRampDurationSeconds)
++     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+     [
+       row.id,
+       row.title,
+@@ -160,6 +193,13 @@ export async function upsertAlarmRow(row: AlarmRow): Promise<void> {
+       row.recordingUri,
+       row.recordingTitle,
+       row.soundUri,
++      row.snoozeMinutes,
++      row.volume,
++      row.repeatRecording,
++      row.recordingDurationMillis,
++      row.gradualVolume,
++      row.startingVolume,
++      row.volumeRampDurationSeconds,
+     ]
+   );
+ }

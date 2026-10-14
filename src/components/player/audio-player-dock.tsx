@@ -1,11 +1,11 @@
 import {
-  Fonts,
-  Layout,
-  Radius,
-  Shadows,
-  Spacing,
-  Typography,
-  useAppTheme,
+    Fonts,
+    Layout,
+    Radius,
+    Shadows,
+    Spacing,
+    Typography,
+    useAppTheme,
 } from "@/constants/theme";
 import { useRecordings } from "@/contexts/recordings-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -13,14 +13,14 @@ import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import Slider from "@react-native-community/slider";
 import React from "react";
 import {
-  BackHandler,
-  Pressable,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-  useColorScheme,
+    BackHandler,
+    Pressable,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
+    useColorScheme,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -34,9 +34,14 @@ function formatTime(seconds: number) {
   return `${Math.floor(safeSeconds / 60)}:${String(safeSeconds % 60).padStart(2, "0")}`;
 }
 
-const ART_BARS = [14, 28, 20, 36, 45, 25, 52, 30, 42, 18, 34, 48, 24, 39, 18, 30, 46, 22, 37, 16, 28, 44, 31, 20, 38];
+const ART_BARS = [
+  14, 28, 20, 36, 45, 25, 52, 30, 42, 18, 34, 48, 24, 39, 18, 30, 46, 22, 37,
+  16, 28, 44, 31, 20, 38,
+];
 
-export default function AudioPlayerDock({ bottomOffset = 78 }: AudioPlayerDockProps) {
+export default function AudioPlayerDock({
+  bottomOffset = 78,
+}: AudioPlayerDockProps) {
   const colors = useAppTheme();
   const isDark = useColorScheme() === "dark";
   const styles = makeStyles(colors, isDark, bottomOffset);
@@ -56,16 +61,20 @@ export default function AudioPlayerDock({ bottomOffset = 78 }: AudioPlayerDockPr
 
   const track = recordings.find((item) => item.id === currentPlayingId) ?? null;
 
-  const duration = playbackDurationSeconds > 0
-    ? playbackDurationSeconds
-    : Math.max(0, (track?.durationMillis ?? 0) / 1000);
-  const position = Math.max(0, Math.min(playbackPositionSeconds, duration || playbackPositionSeconds));
+  const duration =
+    playbackDurationSeconds > 0
+      ? playbackDurationSeconds
+      : Math.max(0, (track?.durationMillis ?? 0) / 1000);
+  const position = Math.max(
+    0,
+    Math.min(playbackPositionSeconds, duration || playbackPositionSeconds),
+  );
   const progress = duration > 0 ? Math.min(1, position / duration) : 0;
 
   const handleSeek = (seconds: number) => {
     if (typeof seekPlayback !== "function") {
       console.warn(
-        "Audio player seeking is unavailable. Replace src/contexts/recordings-context.tsx with the updated shared-player context."
+        "Audio player seeking is unavailable. Replace src/contexts/recordings-context.tsx with the updated shared-player context.",
       );
       return;
     }
@@ -82,10 +91,13 @@ export default function AudioPlayerDock({ bottomOffset = 78 }: AudioPlayerDockPr
 
   React.useEffect(() => {
     if (!isPlayerExpanded) return;
-    const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
-      if (typeof collapsePlayer === "function") collapsePlayer();
-      return true;
-    });
+    const subscription = BackHandler.addEventListener(
+      "hardwareBackPress",
+      () => {
+        if (typeof collapsePlayer === "function") collapsePlayer();
+        return true;
+      },
+    );
     return () => subscription.remove();
   }, [isPlayerExpanded, collapsePlayer]);
 
@@ -100,24 +112,41 @@ export default function AudioPlayerDock({ bottomOffset = 78 }: AudioPlayerDockPr
               onPress={handleExpand}
               accessibilityRole="button"
               accessibilityLabel={`Open player for ${track.title}`}
-              style={({ pressed }) => [styles.miniTrackArea, pressed && styles.pressed]}
+              style={({ pressed }) => [
+                styles.miniTrackArea,
+                pressed && styles.pressed,
+              ]}
             >
               <View style={styles.miniArtwork}>
-                <MaterialCommunityIcons name="waveform" size={22} color={colors.textInverse} />
+                <MaterialCommunityIcons
+                  name="waveform"
+                  size={22}
+                  color={colors.textInverse}
+                />
               </View>
               <View style={styles.miniTrackText}>
-                <Text style={styles.miniTitle} numberOfLines={1}>{track.title}</Text>
-                <Text style={styles.miniSubtitle} numberOfLines={1}>{track.category} · Voice moment</Text>
+                <Text style={styles.miniTitle} numberOfLines={1}>
+                  {track.title}
+                </Text>
+                <Text style={styles.miniSubtitle} numberOfLines={1}>
+                  {track.category} · Voice moment
+                </Text>
               </View>
             </Pressable>
             <TouchableOpacity
               accessibilityRole="button"
-              accessibilityLabel={isPlaying ? "Pause recording" : "Play recording"}
+              accessibilityLabel={
+                isPlaying ? "Pause recording" : "Play recording"
+              }
               style={styles.miniControl}
               onPress={togglePlayback}
               activeOpacity={0.7}
             >
-              <Ionicons name={isPlaying ? "pause" : "play"} size={21} color={colors.textPrimary} />
+              <Ionicons
+                name={isPlaying ? "pause" : "play"}
+                size={21}
+                color={colors.textPrimary}
+              />
             </TouchableOpacity>
             <TouchableOpacity
               accessibilityRole="button"
@@ -129,7 +158,12 @@ export default function AudioPlayerDock({ bottomOffset = 78 }: AudioPlayerDockPr
               <Ionicons name="close" size={19} color={colors.textSecondary} />
             </TouchableOpacity>
             <View style={styles.miniProgressTrack}>
-              <View style={[styles.miniProgressFill, { width: `${progress * 100}%` }]} />
+              <View
+                style={[
+                  styles.miniProgressFill,
+                  { width: `${progress * 100}%` },
+                ]}
+              />
             </View>
           </View>
         </View>
@@ -144,120 +178,152 @@ export default function AudioPlayerDock({ bottomOffset = 78 }: AudioPlayerDockPr
             translucent={false}
           />
           <SafeAreaView style={styles.fullPlayer} edges={["top", "bottom"]}>
-          <View style={styles.playerTopBar}>
-            <TouchableOpacity
-              accessibilityRole="button"
-              accessibilityLabel="Collapse player"
-              hitSlop={12}
-              onPress={handleCollapse}
-              style={styles.topIconButton}
-            >
-              <Ionicons name="chevron-down" size={25} color={colors.textPrimary} />
-            </TouchableOpacity>
-            <View style={styles.nowPlayingLabelWrap}>
-              <Text style={styles.nowPlayingLabel}>NOW PLAYING</Text>
-              <Text style={styles.nowPlayingSubLabel}>YOUR VOICE LIBRARY</Text>
-            </View>
-            <TouchableOpacity
-              accessibilityRole="button"
-              accessibilityLabel="Close player"
-              hitSlop={12}
-              onPress={closePlayer}
-              style={styles.topIconButton}
-            >
-              <Ionicons name="close" size={23} color={colors.textPrimary} />
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.playerBody}>
-            <View style={styles.heroArtwork}>
-              <View style={styles.heroArtworkCircleOne} />
-              <View style={styles.heroArtworkCircleTwo} />
-              <View style={styles.heroWaveform}>
-                {ART_BARS.map((height, index) => (
-                  <View
-                    key={index}
-                    style={[
-                      styles.heroBar,
-                      { height, opacity: index / ART_BARS.length <= progress ? 1 : 0.42 },
-                    ]}
-                  />
-                ))}
-              </View>
-              <View style={styles.heroMicBadge}>
-                <Ionicons name="mic" size={24} color={colors.textInverse} />
-              </View>
-            </View>
-
-            <View style={styles.trackHeading}>
-              <View style={styles.trackHeadingText}>
-                <Text style={styles.fullTrackTitle} numberOfLines={2}>{track.title}</Text>
-                <Text style={styles.fullTrackSubtitle}>{track.category} · Saved voice moment</Text>
-              </View>
-              <View style={styles.playingBadge}>
-                <Ionicons name="volume-high" size={16} color={colors.tealStrong} />
-              </View>
-            </View>
-
-            <View style={styles.progressArea}>
-              <Slider
-                style={styles.progressSlider}
-                minimumValue={0}
-                maximumValue={Math.max(duration, 0.01)}
-                value={Math.min(position, Math.max(duration, 0.01))}
-                onSlidingComplete={(value) => handleSeek(value)}
-                minimumTrackTintColor={colors.tealStrong}
-                maximumTrackTintColor={colors.borderStrong}
-                thumbTintColor={colors.tealStrong}
-                disabled={duration <= 0}
-              />
-              <View style={styles.timeLabels}>
-                <Text style={styles.timeText}>{formatTime(position)}</Text>
-                <Text style={styles.timeText}>{formatTime(duration)}</Text>
-              </View>
-            </View>
-
-            <View style={styles.mainControls}>
+            <View style={styles.playerTopBar}>
               <TouchableOpacity
                 accessibilityRole="button"
-                accessibilityLabel="Back 15 seconds"
-                style={styles.skipControl}
-                onPress={() => handleSeek(position - 15)}
-              >
-                <MaterialCommunityIcons name="rewind-15" size={29} color={colors.textPrimary} />
-              </TouchableOpacity>
-              <TouchableOpacity
-                accessibilityRole="button"
-                accessibilityLabel={isPlaying ? "Pause recording" : "Play recording"}
-                style={styles.mainPlayButton}
-                onPress={togglePlayback}
-                activeOpacity={0.85}
+                accessibilityLabel="Collapse player"
+                hitSlop={12}
+                onPress={handleCollapse}
+                style={styles.topIconButton}
               >
                 <Ionicons
-                  name={isPlaying ? "pause" : "play"}
-                  size={30}
-                  color={colors.textInverse}
-                  style={!isPlaying ? styles.playIconNudge : undefined}
+                  name="chevron-down"
+                  size={25}
+                  color={colors.textPrimary}
                 />
               </TouchableOpacity>
+              <View style={styles.nowPlayingLabelWrap}>
+                <Text style={styles.nowPlayingLabel}>NOW PLAYING</Text>
+                <Text style={styles.nowPlayingSubLabel}>
+                  YOUR VOICE LIBRARY
+                </Text>
+              </View>
               <TouchableOpacity
                 accessibilityRole="button"
-                accessibilityLabel="Forward 15 seconds"
-                style={styles.skipControl}
-                onPress={() => handleSeek(position + 15)}
+                accessibilityLabel="Close player"
+                hitSlop={12}
+                onPress={closePlayer}
+                style={styles.topIconButton}
               >
-                <MaterialCommunityIcons name="fast-forward-15" size={29} color={colors.textPrimary} />
+                <Ionicons name="close" size={23} color={colors.textPrimary} />
               </TouchableOpacity>
             </View>
 
-            <View style={styles.footerActions}>
-              <View style={styles.footerActionItem}>
-                <Ionicons name="headset-outline" size={17} color={colors.textSecondary} />
-                <Text style={styles.footerActionText}>Personal audio</Text>
+            <View style={styles.playerBody}>
+              <View style={styles.heroArtwork}>
+                <View style={styles.heroArtworkCircleOne} />
+                <View style={styles.heroArtworkCircleTwo} />
+                <View style={styles.heroWaveform}>
+                  {ART_BARS.map((height, index) => (
+                    <View
+                      key={index}
+                      style={[
+                        styles.heroBar,
+                        {
+                          height,
+                          opacity:
+                            index / ART_BARS.length <= progress ? 1 : 0.42,
+                        },
+                      ]}
+                    />
+                  ))}
+                </View>
+                <View style={styles.heroMicBadge}>
+                  <Ionicons name="mic" size={24} color={colors.textInverse} />
+                </View>
               </View>
-              <Text style={styles.speedLabel}>1×</Text>
+
+              <View style={styles.trackHeading}>
+                <View style={styles.trackHeadingText}>
+                  <Text style={styles.fullTrackTitle} numberOfLines={2}>
+                    {track.title}
+                  </Text>
+                  <Text style={styles.fullTrackSubtitle}>
+                    {track.category} · Saved voice moment
+                  </Text>
+                </View>
+                <View style={styles.playingBadge}>
+                  <Ionicons
+                    name="volume-high"
+                    size={16}
+                    color={colors.tealStrong}
+                  />
+                </View>
+              </View>
+
+              <View style={styles.progressArea}>
+                <Slider
+                  style={styles.progressSlider}
+                  minimumValue={0}
+                  maximumValue={Math.max(duration, 0.01)}
+                  value={Math.min(position, Math.max(duration, 0.01))}
+                  onSlidingComplete={(value) => handleSeek(value)}
+                  minimumTrackTintColor={colors.tealStrong}
+                  maximumTrackTintColor={colors.borderStrong}
+                  thumbTintColor={colors.tealStrong}
+                  disabled={duration <= 0}
+                />
+                <View style={styles.timeLabels}>
+                  <Text style={styles.timeText}>{formatTime(position)}</Text>
+                  <Text style={styles.timeText}>{formatTime(duration)}</Text>
+                </View>
+              </View>
+
+              <View style={styles.mainControls}>
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Back 15 seconds"
+                  style={styles.skipControl}
+                  onPress={() => handleSeek(position - 15)}
+                >
+                  <MaterialCommunityIcons
+                    name="rewind-15"
+                    size={29}
+                    color={colors.textPrimary}
+                  />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    isPlaying ? "Pause recording" : "Play recording"
+                  }
+                  style={styles.mainPlayButton}
+                  onPress={togglePlayback}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons
+                    name={isPlaying ? "pause" : "play"}
+                    size={30}
+                    color={colors.textInverse}
+                    style={!isPlaying ? styles.playIconNudge : undefined}
+                  />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Forward 15 seconds"
+                  style={styles.skipControl}
+                  onPress={() => handleSeek(position + 15)}
+                >
+                  <MaterialCommunityIcons
+                    name="fast-forward-15"
+                    size={29}
+                    color={colors.textPrimary}
+                  />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.footerActions}>
+                <View style={styles.footerActionItem}>
+                  <Ionicons
+                    name="headset-outline"
+                    size={17}
+                    color={colors.textSecondary}
+                  />
+                  <Text style={styles.footerActionText}>Personal audio</Text>
+                </View>
+                <Text style={styles.speedLabel}>1×</Text>
+              </View>
             </View>
-          </View>
           </SafeAreaView>
         </View>
       ) : null}
@@ -265,7 +331,11 @@ export default function AudioPlayerDock({ bottomOffset = 78 }: AudioPlayerDockPr
   );
 }
 
-function makeStyles(colors: ReturnType<typeof useAppTheme>, isDark: boolean, bottomOffset: number) {
+function makeStyles(
+  colors: ReturnType<typeof useAppTheme>,
+  isDark: boolean,
+  bottomOffset: number,
+) {
   const cardShadow = isDark ? Shadows.dark.floating : Shadows.light.floating;
 
   return StyleSheet.create({
@@ -321,8 +391,18 @@ function makeStyles(colors: ReturnType<typeof useAppTheme>, isDark: boolean, bot
       marginTop: 2,
       color: colors.textSecondary,
     },
-    miniControl: { width: 40, height: 48, alignItems: "center", justifyContent: "center" },
-    miniClose: { width: 32, height: 48, alignItems: "center", justifyContent: "center" },
+    miniControl: {
+      width: 40,
+      height: 48,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    miniClose: {
+      width: 32,
+      height: 48,
+      alignItems: "center",
+      justifyContent: "center",
+    },
     miniProgressTrack: {
       position: "absolute",
       left: 0,
@@ -333,11 +413,11 @@ function makeStyles(colors: ReturnType<typeof useAppTheme>, isDark: boolean, bot
     },
     miniProgressFill: { height: "100%", backgroundColor: colors.tealStrong },
     expandedOverlay: {
-        position: "absolute",
-  top: 0,
-  right: 0,
-  bottom: 0,
-  left: 0,
+      position: "absolute",
+      top: 0,
+      right: 0,
+      bottom: 0,
+      left: 0,
       zIndex: 9999,
       elevation: 9999,
       backgroundColor: colors.background,
@@ -350,7 +430,12 @@ function makeStyles(colors: ReturnType<typeof useAppTheme>, isDark: boolean, bot
       alignItems: "center",
       justifyContent: "space-between",
     },
-    topIconButton: { width: 42, height: 42, alignItems: "center", justifyContent: "center" },
+    topIconButton: {
+      width: 42,
+      height: 42,
+      alignItems: "center",
+      justifyContent: "center",
+    },
     nowPlayingLabelWrap: { alignItems: "center", gap: 3 },
     nowPlayingLabel: {
       ...Typography.caption,
@@ -394,7 +479,9 @@ function makeStyles(colors: ReturnType<typeof useAppTheme>, isDark: boolean, bot
       aspectRatio: 1,
       borderRadius: Radius.pill,
       borderWidth: 1,
-      borderColor: isDark ? "rgba(198, 229, 205, 0.12)" : "rgba(40, 87, 65, 0.12)",
+      borderColor: isDark
+        ? "rgba(198, 229, 205, 0.12)"
+        : "rgba(40, 87, 65, 0.12)",
     },
     heroArtworkCircleTwo: {
       position: "absolute",
@@ -402,7 +489,9 @@ function makeStyles(colors: ReturnType<typeof useAppTheme>, isDark: boolean, bot
       aspectRatio: 1,
       borderRadius: Radius.pill,
       borderWidth: 1,
-      borderColor: isDark ? "rgba(198, 229, 205, 0.2)" : "rgba(40, 87, 65, 0.18)",
+      borderColor: isDark
+        ? "rgba(198, 229, 205, 0.2)"
+        : "rgba(40, 87, 65, 0.18)",
     },
     heroWaveform: {
       width: "76%",
@@ -459,11 +548,17 @@ function makeStyles(colors: ReturnType<typeof useAppTheme>, isDark: boolean, bot
       borderRadius: Radius.pill,
       alignItems: "center",
       justifyContent: "center",
-      backgroundColor: isDark ? "rgba(92, 138, 113, 0.16)" : "rgba(92, 138, 113, 0.1)",
+      backgroundColor: isDark
+        ? "rgba(92, 138, 113, 0.16)"
+        : "rgba(92, 138, 113, 0.1)",
     },
     progressArea: { marginTop: Spacing.two },
     progressSlider: { width: "100%", height: 34 },
-    timeLabels: { flexDirection: "row", justifyContent: "space-between", marginTop: -2 },
+    timeLabels: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      marginTop: -2,
+    },
     timeText: {
       ...Typography.caption,
       fontFamily: Fonts?.sans,
@@ -478,7 +573,12 @@ function makeStyles(colors: ReturnType<typeof useAppTheme>, isDark: boolean, bot
       gap: Spacing.eight,
       marginTop: Spacing.three,
     },
-    skipControl: { width: 48, height: 54, alignItems: "center", justifyContent: "center" },
+    skipControl: {
+      width: 48,
+      height: 54,
+      alignItems: "center",
+      justifyContent: "center",
+    },
     mainPlayButton: {
       width: 70,
       height: 70,
@@ -495,7 +595,11 @@ function makeStyles(colors: ReturnType<typeof useAppTheme>, isDark: boolean, bot
       alignItems: "center",
       marginTop: Spacing.three,
     },
-    footerActionItem: { flexDirection: "row", alignItems: "center", gap: Spacing.two },
+    footerActionItem: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Spacing.two,
+    },
     footerActionText: {
       ...Typography.caption,
       fontFamily: Fonts?.sans,

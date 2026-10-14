@@ -5,6 +5,7 @@ import {
   OnboardingProvider,
   useOnboarding,
 } from "@/contexts/onboarding-context";
+import { useAlarmHandoff } from "@/lib/alarms/alarm_handoff";
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import * as SystemUI from "expo-system-ui";
@@ -14,6 +15,10 @@ import { StatusBar as RNStatusBar, View, useColorScheme } from "react-native";
 void SplashScreen.preventAutoHideAsync().catch(() => {});
 
 export default function RootLayout() {
+  // Ends an alarm (and any pending snooze) when the user taps Dismiss on the ring screen.
+  // It lives here, above the loading checks below, so it also runs on a cold launch.
+  useAlarmHandoff();
+
   return (
     <AuthProvider>
       <OnboardingProvider>
