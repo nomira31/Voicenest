@@ -1,27 +1,29 @@
 import { useAppDialog } from "@/components/ui/app-dialog";
 import {
-    deleteRecordingDb,
-    fetchAllRecordings,
-    insertRecording,
-    type RecordingRecord,
-    updateRecordingDb,
+  deleteRecordingDb,
+  fetchAllRecordings,
+  insertRecording,
+  type RecordingRecord,
+  updateRecordingDb,
 } from "@/lib/database";
 import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import { Directory, File, Paths } from "expo-file-system";
 import {
-    createContext,
-    type ReactNode,
-    useCallback,
-    useContext,
-    useEffect,
-    useState,
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
 } from "react";
 
-interface AddRecordingParams {
+export interface AddRecordingParams {
   tempUri: string;
   durationMillis: number;
   title?: string;
   category?: "People" | "Motivation" | "Reminders";
+  fileName?: string;
+  mimeType?: string;
 }
 
 interface RecordingsContextType {
@@ -193,6 +195,8 @@ export function RecordingsProvider({ children }: { children: ReactNode }) {
       durationMillis,
       title,
       category = "Motivation",
+      fileName,
+      mimeType,
     }: AddRecordingParams): Promise<RecordingRecord> => {
       const sourceFile = new File(tempUri);
       if (!sourceFile.exists) {
@@ -203,9 +207,18 @@ export function RecordingsProvider({ children }: { children: ReactNode }) {
         recordingsDirectory.create({ intermediates: true, idempotent: true });
       }
 
-      const sourcePath = tempUri.split("?")[0];
-      const extension = sourcePath.match(/\.[^./\\]+$/)?.[0] ?? ".m4a";
-      const id = `${Date.now()}`;
+      const extensionPattern = /\.([a-z0-9]{2,6})(?:[?#].*)?$/i;
+      const explicitExtension = fileName?.match(extensionPattern)?.[1];
+      const uriExtension = tempUri.split(/[?#]/, 1)[0].match(extensionPattern)?.[1];
+      const mimeExtension: Record<string, string> = {
+        "audio/mpeg": "mp3", "audio/mp3": "mp3", "audio/mp4": "m4a",
+        "audio/x-m4a": "m4a", "audio/aac": "aac", "audio/wav": "wav",
+        "audio/x-wav": "wav", "audio/ogg": "ogg", "application/ogg": "ogg",
+        "audio/opus": "opus", "audio/3gpp": "3gp", "audio/amr": "amr",
+        "audio/flac": "flac", "audio/webm": "webm", "audio/x-caf": "caf",
+      };
+      const extension = `.${(explicitExtension || uriExtension || mimeExtension[mimeType?.split(";", 1)[0].toLowerCase() ?? ""] || "m4a").toLowerCase()}`;
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const destinationFile = new File(recordingsDirectory, `recording_${id}${extension}`);
 
       sourceFile.copy(destinationFile);

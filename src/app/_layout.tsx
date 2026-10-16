@@ -10,6 +10,7 @@ import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import * as SystemUI from "expo-system-ui";
 import { useEffect } from "react";
+import { ShareIntentProvider } from "expo-share-intent";
 import { StatusBar as RNStatusBar, View, useColorScheme } from "react-native";
 
 void SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -20,11 +21,13 @@ export default function RootLayout() {
   useAlarmHandoff();
 
   return (
-    <AuthProvider>
-      <OnboardingProvider>
-        <RootNavigator />
-      </OnboardingProvider>
-    </AuthProvider>
+    <ShareIntentProvider>
+      <AuthProvider>
+        <OnboardingProvider>
+          <RootNavigator />
+        </OnboardingProvider>
+      </AuthProvider>
+    </ShareIntentProvider>
   );
 }
 

@@ -26,6 +26,7 @@ import {
   Spacing,
   Typography,
   useAppTheme,
+  useResponsiveLayout,
   type Theme,
 } from "@/constants/theme";
 import { useAuth } from "@/contexts/auth-context";
@@ -34,7 +35,8 @@ export default function LoginScreen() {
   const colors = useAppTheme();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
-  const styles = createStyles(colors, isDark);
+  const responsive = useResponsiveLayout();
+  const styles = createStyles(colors, isDark, responsive);
   const router = useRouter();
   const { signIn } = useAuth();
   const { width } = useWindowDimensions();
@@ -293,9 +295,10 @@ export default function LoginScreen() {
   );
 }
 
-function createStyles(colors: Theme, isDark: boolean) {
+function createStyles(colors: Theme, isDark: boolean, responsive: ReturnType<typeof useResponsiveLayout>) {
   const cardShadow = isDark ? Shadows.dark.card : Shadows.light.card;
   const floatingShadow = isDark ? Shadows.dark.floating : Shadows.light.floating;
+  const landscapeLayout = responsive.isLandscape && (responsive.height < 520 || responsive.width >= 700);
 
   return StyleSheet.create({
     container: {
@@ -307,12 +310,12 @@ function createStyles(colors: Theme, isDark: boolean) {
     },
     scrollContent: {
       flexGrow: 1,
-      paddingHorizontal: Layout.screenHorizontal,
+      paddingHorizontal: responsive.horizontalPadding,
       paddingBottom: Spacing.six,
     },
     pageWidth: {
       width: "100%",
-      maxWidth: Layout.contentMaxWidth,
+      maxWidth: responsive.contentMaxWidth,
       alignSelf: "center",
     },
 
@@ -350,14 +353,18 @@ function createStyles(colors: Theme, isDark: boolean) {
     /* Hero */
     hero: {
       paddingTop: Spacing.two,
-      paddingBottom: Spacing.five,
+      paddingBottom: responsive.isLandscape ? Spacing.three : Spacing.five,
+      flexDirection: landscapeLayout ? "row" : "column",
+      alignItems: landscapeLayout ? "stretch" : "center",
+      gap: landscapeLayout ? Spacing.four : 0,
     },
     sceneCard: {
-      height: 164,
+      height: landscapeLayout ? (responsive.height < 520 ? 142 : Math.min(230, responsive.height * 0.32)) : responsive.isCompact ? 148 : 164,
+      flex: landscapeLayout ? 1 : undefined,
       borderRadius: Radius.xl,
       overflow: "hidden",
       backgroundColor: colors.surfaceSky,
-      marginBottom: Spacing.five,
+      marginBottom: landscapeLayout ? 0 : Spacing.five,
       borderWidth: 1,
       borderColor: colors.border,
       ...cardShadow,
@@ -422,8 +429,11 @@ function createStyles(colors: Theme, isDark: boolean) {
       maxWidth: 240,
     },
     heroCopy: {
+      flex: landscapeLayout ? 1 : undefined,
       alignItems: "center",
+      justifyContent: "center",
       paddingHorizontal: Spacing.two,
+      minWidth: 0,
     },
     eyebrow: {
       ...Typography.caption,
@@ -436,8 +446,8 @@ function createStyles(colors: Theme, isDark: boolean) {
     title: {
       ...Typography.display,
       fontFamily: Fonts?.serif,
-      fontSize: 32,
-      lineHeight: 38,
+      fontSize: responsive.isCompact ? 28 : responsive.isTablet ? 36 : 32,
+      lineHeight: responsive.isCompact ? 34 : responsive.isTablet ? 42 : 38,
       textAlign: "center",
       marginTop: Spacing.one,
       color: colors.textPrimary,
@@ -455,7 +465,10 @@ function createStyles(colors: Theme, isDark: boolean) {
 
     /* Form */
     form: {
-      gap: Spacing.four,
+      width: "100%",
+      maxWidth: 500,
+      alignSelf: "center",
+      gap: responsive.isShort ? Spacing.three : Spacing.four,
     },
     fieldGroup: {
       gap: Spacing.one + 2,

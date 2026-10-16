@@ -1,3 +1,4 @@
+import SharedAudioImportBridge from "@/components/import/shared-audio-import-bridge";
 import AudioPlayerDock from "@/components/player/audio-player-dock";
 import RecordScreen from "@/components/recording/inteface";
 import { useAppTheme } from "@/constants/theme";
@@ -38,7 +39,7 @@ const TABS: TabConfig[] = [
     sf: { default: "alarm", selected: "alarm.fill" },
   },
   {
-    name: "settings/index",
+    name: "settings",
     label: "Profile",
     icon: { default: "account-outline", selected: "account" },
     sf: { default: "person.crop.circle", selected: "person.crop.circle.fill" },
@@ -75,6 +76,8 @@ function TabsContent() {
 
   return (
     <>
+      <SharedAudioImportBridge />
+
       <NativeTabs
         minimizeBehavior="never"
         disableTransparentOnScrollEdge

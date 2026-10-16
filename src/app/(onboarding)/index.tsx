@@ -26,7 +26,7 @@ import {
   VOICE_MARK_BARS,
   VoiceMark,
 } from "@/components/illustrations/VoiceMark";
-import { Radius, Spacing, useAppTheme, type Theme } from "@/constants/theme";
+import { Radius, Spacing, useAppTheme, useResponsiveLayout, type Theme } from "@/constants/theme";
 import { useOnboarding } from "@/contexts/onboarding-context";
 
 type SlideVisual = "intention" | "voice" | "rhythm";
@@ -92,6 +92,7 @@ export default function OnboardingScreen() {
   const router = useRouter();
   const colors = useAppTheme();
   const { width, height } = useWindowDimensions();
+  const responsive = useResponsiveLayout();
   const { completeOnboarding } = useOnboarding();
 
   const [showWelcome, setShowWelcome] = useState(true);
@@ -118,10 +119,12 @@ export default function OnboardingScreen() {
   const slideProgress = useRef(new Animated.Value(0)).current;
   const welcomeAnimation = useRef<Animated.CompositeAnimation | null>(null);
 
-  const sceneSize = width;
-  const compact = height < 700;
-  const visualHeight = Math.max(174, Math.min(compact ? 204 : 232, height * 0.30));
-  const styles = createStyles(colors, { width, visualHeight });
+  const sceneSize = responsive.isLandscape ? Math.min(width, height * 1.45) : width;
+  const compact = height < 700 || responsive.isLandscape;
+  const visualHeight = responsive.isLandscape
+    ? Math.max(174, Math.min(248, height * 0.42))
+    : Math.max(174, Math.min(compact ? 204 : 232, height * 0.30));
+  const styles = createStyles(colors, { width, height, visualHeight, isLandscape: responsive.isLandscape, isCompact: responsive.isCompact, isTablet: responsive.isTablet });
   const currentSlide = slides[step];
   const isLastStep = step === slides.length - 1;
 
@@ -474,7 +477,7 @@ export default function OnboardingScreen() {
                     </View>
                   </View>
 
-                  <Animated.View style={{ transform: [{ translateX: visualDragX }] }}>
+                  <Animated.View style={[styles.visualContainer, { transform: [{ translateX: visualDragX }] }]}>
                     <SlideVisualCard visual={currentSlide.visual} styles={styles} colors={colors} />
                   </Animated.View>
                 </Animated.View>
@@ -637,7 +640,7 @@ function SlideVisualCard({ visual, styles, colors }: SlideVisualCardProps) {
   );
 }
 
-function createStyles(colors: Theme, dimensions: { width: number; visualHeight: number }) {
+function createStyles(colors: Theme, dimensions: { width: number; height: number; visualHeight: number; isLandscape: boolean; isCompact: boolean; isTablet: boolean }) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
     screen: { flex: 1, backgroundColor: colors.background },
@@ -653,14 +656,14 @@ function createStyles(colors: Theme, dimensions: { width: number; visualHeight: 
     sceneLayer: { ...StyleSheet.absoluteFillObject },
     welcomeBrand: {
       alignItems: "center",
-      paddingHorizontal: Spacing.six,
+      paddingHorizontal: dimensions.isCompact ? Spacing.four : Spacing.six,
       zIndex: 2,
     },
     welcomeWordmark: {
       marginTop: 11,
       fontFamily: "serif",
-      fontSize: 34,
-      lineHeight: 42,
+      fontSize: dimensions.isLandscape ? 29 : dimensions.isCompact ? 30 : 34,
+      lineHeight: dimensions.isLandscape ? 36 : dimensions.isCompact ? 37 : 42,
       fontWeight: "500",
       letterSpacing: -0.5,
       textAlign: "center",
@@ -731,7 +734,7 @@ function createStyles(colors: Theme, dimensions: { width: number; visualHeight: 
     contentScreen: { flex: 1, backgroundColor: colors.background },
     contentHeader: {
       minHeight: 54,
-      paddingHorizontal: 22,
+      paddingHorizontal: dimensions.isCompact ? 16 : dimensions.isTablet ? 28 : 22,
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "space-between",
@@ -766,7 +769,7 @@ function createStyles(colors: Theme, dimensions: { width: number; visualHeight: 
     progressTrack: {
       flexDirection: "row",
       gap: 6,
-      paddingHorizontal: 22,
+      paddingHorizontal: dimensions.isCompact ? 16 : dimensions.isTablet ? 28 : 22,
       paddingTop: 4,
       paddingBottom: 8,
     },
@@ -782,13 +785,14 @@ function createStyles(colors: Theme, dimensions: { width: number; visualHeight: 
     contentScroll: { flex: 1 },
     contentScrollInner: {
       flexGrow: 1,
-      paddingHorizontal: 22,
-      paddingTop: 23,
-      paddingBottom: 20,
+      paddingHorizontal: dimensions.isCompact ? 16 : dimensions.isTablet ? 28 : 22,
+      paddingTop: dimensions.isLandscape ? 8 : 23,
+      paddingBottom: dimensions.isLandscape ? 8 : 20,
       alignItems: "center",
     },
-    slideContent: { width: "100%", maxWidth: 500, alignSelf: "center" },
-    copyBlock: { width: "100%" },
+    slideContent: { width: "100%", maxWidth: dimensions.isTablet ? 760 : 500, alignSelf: "center", flexDirection: dimensions.isLandscape ? "row" : "column", alignItems: dimensions.isLandscape ? "center" : "stretch", gap: dimensions.isLandscape ? 22 : 0 },
+    visualContainer: { width: dimensions.isLandscape ? undefined : "100%", flex: dimensions.isLandscape ? 1 : undefined, minWidth: 0, alignItems: "center" },
+    copyBlock: { width: dimensions.isLandscape ? "48%" : "100%", minWidth: 0, flexShrink: 1 },
     eyebrowRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 16 },
     eyebrowDot: { width: 7, height: 7, borderRadius: Radius.pill, backgroundColor: colors.accent },
     eyebrow: {
@@ -823,8 +827,8 @@ function createStyles(colors: Theme, dimensions: { width: number; visualHeight: 
       maxWidth: 440,
       alignSelf: "flex-start",
       fontFamily: "serif",
-      fontSize: dimensions.width < 360 ? 30 : 33,
-      lineHeight: dimensions.width < 360 ? 37 : 40,
+      fontSize: dimensions.isLandscape ? 27 : dimensions.width < 360 ? 29 : dimensions.isTablet ? 36 : 33,
+      lineHeight: dimensions.isLandscape ? 33 : dimensions.width < 360 ? 35 : dimensions.isTablet ? 43 : 40,
       letterSpacing: -0.65,
       fontWeight: "500",
       color: colors.textPrimary,
@@ -834,9 +838,9 @@ function createStyles(colors: Theme, dimensions: { width: number; visualHeight: 
       width: "100%",
       maxWidth: 450,
       alignSelf: "flex-start",
-      marginTop: 13,
-      fontSize: 15,
-      lineHeight: 24,
+      marginTop: dimensions.isLandscape ? 7 : 13,
+      fontSize: dimensions.isCompact ? 14 : 15,
+      lineHeight: dimensions.isLandscape ? 20 : 24,
       fontWeight: "400",
       letterSpacing: 0.03,
       color: colors.textSecondary,
@@ -855,11 +859,11 @@ function createStyles(colors: Theme, dimensions: { width: number; visualHeight: 
     // Three original UI motifs replace the landscape on all content pages.
     visualPanel: {
       width: "100%",
-      maxWidth: 460,
+      maxWidth: dimensions.isTablet ? 520 : 460,
       height: dimensions.visualHeight,
       alignSelf: "center",
-      marginTop: 24,
-      padding: 19,
+      marginTop: dimensions.isLandscape ? 0 : dimensions.isCompact ? 14 : 24,
+      padding: dimensions.isCompact ? 14 : 19,
       borderRadius: 26,
       borderWidth: 1,
       overflow: "hidden",

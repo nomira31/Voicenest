@@ -13,7 +13,9 @@ import {
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
+  useWindowDimensions,
   Text,
   TextInput,
   View,
@@ -48,7 +50,8 @@ type AppDialogViewProps = {
 function AppDialogView({ config, onSelect }: AppDialogViewProps) {
   const colors = useAppTheme();
   const isDark = useColorScheme() === "dark";
-  const styles = makeStyles(colors, isDark);
+  const { width, height } = useWindowDimensions();
+  const styles = makeStyles(colors, isDark, width, height);
   const [inputValue, setInputValue] = useState(config.initialValue ?? "");
 
   const choose = (option: DialogOption) => {
@@ -86,7 +89,7 @@ function AppDialogView({ config, onSelect }: AppDialogViewProps) {
             <View style={styles.sheetHandle} />
             <Text style={styles.sheetTitle} numberOfLines={2}>{config.title}</Text>
             {!!config.message && <Text style={styles.sheetMessage}>{config.message}</Text>}
-            <View style={styles.optionsList}>
+            <ScrollView style={styles.optionsList} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               {(config.options ?? []).map((option) => (
                 <Pressable
                   key={option.value}
@@ -109,7 +112,7 @@ function AppDialogView({ config, onSelect }: AppDialogViewProps) {
                   ) : null}
                 </Pressable>
               ))}
-            </View>
+            </ScrollView>
             <Pressable
               onPress={close}
               accessibilityRole="button"
@@ -266,7 +269,10 @@ export function useAppDialog() {
   return { dialog, showAlert, showConfirm, showPrompt, showOptions };
 }
 
-function makeStyles(colors: ReturnType<typeof useAppTheme>, isDark: boolean) {
+function makeStyles(colors: ReturnType<typeof useAppTheme>, isDark: boolean, width: number, height: number) {
+  const isCompact = width < 360;
+  const isShort = height < 520;
+  const isTablet = Math.min(width, height) >= 600;
   const shadow = isDark ? Shadows.dark.card : Shadows.light.card;
 
   return StyleSheet.create({
@@ -274,14 +280,15 @@ function makeStyles(colors: ReturnType<typeof useAppTheme>, isDark: boolean) {
       flex: 1,
       justifyContent: "center",
       alignItems: "center",
-      padding: 22,
+      padding: isCompact ? 10 : isShort ? 14 : 22,
       backgroundColor: "rgba(5, 12, 18, 0.58)",
     },
     dialogCard: {
       width: "100%",
-      maxWidth: 390,
+      maxWidth: isTablet ? 480 : 390,
+      maxHeight: isShort ? "94%" : "90%",
       borderRadius: Radius.xl,
-      padding: Spacing.five,
+      padding: isCompact ? Spacing.three : Spacing.five,
       backgroundColor: colors.backgroundElevated,
       borderWidth: 1,
       borderColor: colors.border,
@@ -329,7 +336,7 @@ function makeStyles(colors: ReturnType<typeof useAppTheme>, isDark: boolean) {
     },
     dialogActions: {
       width: "100%",
-      flexDirection: "row",
+      flexDirection: isCompact ? "column" : "row",
       gap: Spacing.two,
       marginTop: Spacing.five,
     },
@@ -360,8 +367,12 @@ function makeStyles(colors: ReturnType<typeof useAppTheme>, isDark: boolean) {
     destructiveButtonText: { color: "#FFFFFF" },
     actionSheet: {
       position: "absolute",
-      left: 10,
-      right: 10,
+      left: isTablet ? undefined : 10,
+      right: isTablet ? undefined : 10,
+      width: isTablet ? 560 : undefined,
+      maxWidth: "100%",
+      alignSelf: "center",
+      maxHeight: isShort ? "94%" : undefined,
       bottom: Platform.OS === "ios" ? 24 : 12,
       borderRadius: Radius.xl,
       padding: Spacing.four,
@@ -394,7 +405,7 @@ function makeStyles(colors: ReturnType<typeof useAppTheme>, isDark: boolean) {
       marginTop: Spacing.one,
       marginBottom: Spacing.two,
     },
-    optionsList: { marginTop: Spacing.two },
+    optionsList: { marginTop: Spacing.two, maxHeight: isShort ? 230 : 420, flexGrow: 0 },
     optionRow: {
       minHeight: 52,
       flexDirection: "row",

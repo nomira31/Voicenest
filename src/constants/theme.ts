@@ -1,13 +1,102 @@
 import "@/global.css";
 
+import { File, Paths } from "expo-file-system";
+import { useCallback, useEffect, useState } from "react";
 import {
+  Appearance,
   Platform,
-  useColorScheme,
+  useColorScheme as useRNColorScheme,
+  useWindowDimensions,
   type ColorSchemeName,
 } from "react-native";
 
+export type ThemePreference = "system" | "light" | "dark";
+
+const THEME_PREF_FILE = new File(Paths.document, "voicenest-theme-pref.json");
+let currentPreference: ThemePreference | null = null;
+const prefListeners = new Set<(pref: ThemePreference) => void>();
+
+export function getThemePreference(): ThemePreference {
+  if (currentPreference) return currentPreference;
+  try {
+    if (THEME_PREF_FILE.exists) {
+      const parsed = JSON.parse(THEME_PREF_FILE.textSync());
+      if (
+        parsed?.mode === "light" ||
+        parsed?.mode === "dark" ||
+        parsed?.mode === "system"
+      ) {
+        currentPreference = parsed.mode;
+        return parsed.mode;
+      }
+    }
+  } catch {
+    // Fallback to system
+  }
+  currentPreference = "system";
+  return "system";
+}
+
+export function setThemePreference(mode: ThemePreference) {
+  currentPreference = mode;
+  try {
+    if (!THEME_PREF_FILE.exists) {
+      THEME_PREF_FILE.create({ intermediates: true, overwrite: true });
+    }
+    THEME_PREF_FILE.write(JSON.stringify({ mode }));
+  } catch {
+    // Ignore write failure
+  }
+
+  try {
+    if (Platform.OS !== "web" && typeof Appearance?.setColorScheme === "function") {
+      // React Native requires "unspecified" to follow the device theme.
+      // Passing null throws a fatal native NullPointerException in native Android modules.
+      const nativeScheme = mode === "system" ? "unspecified" : mode;
+      Appearance.setColorScheme(nativeScheme as any);
+    }
+  } catch (err) {
+    console.warn("Could not update native appearance colorScheme:", err);
+  }
+
+  prefListeners.forEach((listener) => listener(mode));
+}
+
+export function useThemePreference() {
+  const [preference, setPreference] = useState<ThemePreference>(() =>
+    getThemePreference(),
+  );
+  const systemScheme = useRNColorScheme();
+
+  useEffect(() => {
+    const listener = (next: ThemePreference) => setPreference(next);
+    prefListeners.add(listener);
+    return () => {
+      prefListeners.delete(listener);
+    };
+  }, []);
+
+  const resolvedScheme: "light" | "dark" =
+    preference === "dark"
+      ? "dark"
+      : preference === "light"
+        ? "light"
+        : systemScheme === "dark"
+          ? "dark"
+          : "light";
+
+  const updatePreference = useCallback((next: ThemePreference) => {
+    setThemePreference(next);
+  }, []);
+
+  return {
+    preference,
+    resolvedScheme,
+    setPreference: updatePreference,
+  };
+}
+
 export const Palette = {
-  // Warmer, creamier ivory (sunlit paper)
   ivory: "#FBF6E9",
   ivoryBright: "#FFFCF4",
   ivoryMuted: "#F3ECDA",
@@ -17,7 +106,6 @@ export const Palette = {
   navySoft: "#1F4770",
   navyDeep: "#0E2A4A",
 
-  // Livelier teal
   teal: "#34898A",
   tealDeep: "#256F72",
   tealLight: "#DDF0EE",
@@ -26,16 +114,13 @@ export const Palette = {
   sageDeep: "#6FA07C",
   sageLight: "#DCEBDD",
 
-  // Real sky blue, like the AI Voice tile in the mockup
   sky: "#A9CBE8",
   skyLight: "#DDEBF8",
 
-  // Sunrise yellow, glowier and more saturated
   yellow: "#F7C948",
   yellowDeep: "#EDB02A",
   yellowLight: "#FFEFC2",
 
-  // Warm accents
   peach: "#FFDFC8",
   coral: "#EE8A6B",
 
@@ -95,7 +180,6 @@ const Light = {
   infoSoft: "#DDEBF8",
 } as const;
 
-// Dark mode = twilight: deep blue-indigo with a warm glow, not cold black
 const Dark = {
   ...Light,
 
@@ -118,7 +202,6 @@ const Dark = {
   surfaceSky: "#1D3560",
   surfacePeach: "#3F2D33",
 
-  // Warm yellow buttons glow against the blue
   primary: "#FFD36B",
   primaryHover: "#FFDF8F",
   primaryPressed: "#F2BE45",
@@ -171,8 +254,13 @@ export const getTheme = (colorScheme: ColorSchemeName): Theme =>
   Colors[getThemeName(colorScheme)] as Theme;
 
 export function useAppTheme(): Theme {
-  const scheme = useColorScheme();
-  return Colors[scheme === "dark" ? "dark" : "light"] as Theme;
+  const { resolvedScheme } = useThemePreference();
+  return Colors[resolvedScheme] as Theme;
+}
+
+export function useAppColorScheme(): "light" | "dark" {
+  const { resolvedScheme } = useThemePreference();
+  return resolvedScheme;
 }
 
 export const Typography = {
@@ -335,6 +423,30 @@ export const Layout = {
   minTouchTarget: 44,
   bottomBarHeight: 72,
 } as const;
+
+export function useResponsiveLayout() {
+  const { width, height } = useWindowDimensions();
+  const shortSide = Math.min(width, height);
+  const isCompact = width < 375;
+  const isShort = height < 700;
+  const isTablet = shortSide >= 600 || width >= 768;
+  const horizontalPadding = isCompact
+    ? Layout.screenHorizontalCompact
+    : isTablet
+      ? 28
+      : Layout.screenHorizontal;
+  const contentMaxWidth = isTablet ? 760 : Layout.contentMaxWidth;
+
+  return {
+    width,
+    height,
+    isCompact,
+    isShort,
+    isTablet,
+    horizontalPadding,
+    contentMaxWidth,
+  };
+}
 
 export const BottomTabInset = Platform.select({
   ios: 50,

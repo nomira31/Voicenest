@@ -1,11 +1,12 @@
+
 import {
-    Fonts,
-    Layout,
-    Radius,
-    Shadows,
-    Spacing,
-    Typography,
-    useAppTheme,
+  Fonts,
+  Layout,
+  Radius,
+  Shadows,
+  Spacing,
+  Typography,
+  useAppTheme,
 } from "@/constants/theme";
 import { useRecordings } from "@/contexts/recordings-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -13,30 +14,34 @@ import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import Slider from "@react-native-community/slider";
 import React from "react";
 import {
-    BackHandler,
-    Pressable,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
-    useColorScheme,
+  BackHandler,
+  Pressable,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+  useColorScheme,
+  useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 interface AudioPlayerDockProps {
-  /** Position the collapsed player above the app's tab bar. Adjust for a custom tab-bar height. */
   bottomOffset?: number;
 }
 
 function formatTime(seconds: number) {
   const safeSeconds = Math.max(0, Math.floor(seconds || 0));
-  return `${Math.floor(safeSeconds / 60)}:${String(safeSeconds % 60).padStart(2, "0")}`;
+
+  return `${Math.floor(safeSeconds / 60)}:${String(
+    safeSeconds % 60,
+  ).padStart(2, "0")}`;
 }
 
 const ART_BARS = [
-  14, 28, 20, 36, 45, 25, 52, 30, 42, 18, 34, 48, 24, 39, 18, 30, 46, 22, 37,
-  16, 28, 44, 31, 20, 38,
+  14, 28, 20, 36, 45, 25, 52, 30, 42, 18, 34, 48, 24, 39, 18, 30, 46, 22,
+  37, 16, 28, 44, 31, 20, 38,
 ];
 
 export default function AudioPlayerDock({
@@ -44,7 +49,39 @@ export default function AudioPlayerDock({
 }: AudioPlayerDockProps) {
   const colors = useAppTheme();
   const isDark = useColorScheme() === "dark";
-  const styles = makeStyles(colors, isDark, bottomOffset);
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+
+  const isLandscape = screenWidth > screenHeight;
+  const isCompact = screenHeight < 700;
+  const isNarrow = screenWidth < 360;
+  const isTablet = screenWidth >= 600;
+
+  const styles = React.useMemo(
+    () =>
+      makeStyles(
+        colors,
+        isDark,
+        bottomOffset,
+        screenWidth,
+        screenHeight,
+        isLandscape,
+        isCompact,
+        isNarrow,
+        isTablet,
+      ),
+    [
+      colors,
+      isDark,
+      bottomOffset,
+      screenWidth,
+      screenHeight,
+      isLandscape,
+      isCompact,
+      isNarrow,
+      isTablet,
+    ],
+  );
+
   const {
     recordings,
     currentPlayingId,
@@ -59,26 +96,28 @@ export default function AudioPlayerDock({
     seekPlayback,
   } = useRecordings();
 
-  const track = recordings.find((item) => item.id === currentPlayingId) ?? null;
+  const track =
+    recordings.find((item) => item.id === currentPlayingId) ?? null;
 
   const duration =
     playbackDurationSeconds > 0
       ? playbackDurationSeconds
       : Math.max(0, (track?.durationMillis ?? 0) / 1000);
+
   const position = Math.max(
     0,
     Math.min(playbackPositionSeconds, duration || playbackPositionSeconds),
   );
+
   const progress = duration > 0 ? Math.min(1, position / duration) : 0;
 
   const handleSeek = (seconds: number) => {
     if (typeof seekPlayback !== "function") {
-      console.warn(
-        "Audio player seeking is unavailable. Replace src/contexts/recordings-context.tsx with the updated shared-player context.",
-      );
+      console.warn("Audio player seeking is unavailable.");
       return;
     }
-    void seekPlayback(seconds);
+
+    void seekPlayback(Math.max(0, Math.min(seconds, duration || seconds)));
   };
 
   const handleExpand = () => {
@@ -91,13 +130,19 @@ export default function AudioPlayerDock({
 
   React.useEffect(() => {
     if (!isPlayerExpanded) return;
+
     const subscription = BackHandler.addEventListener(
       "hardwareBackPress",
       () => {
-        if (typeof collapsePlayer === "function") collapsePlayer();
-        return true;
+        if (typeof collapsePlayer === "function") {
+          collapsePlayer();
+          return true;
+        }
+
+        return false;
       },
     );
+
     return () => subscription.remove();
   }, [isPlayerExpanded, collapsePlayer]);
 
@@ -105,7 +150,7 @@ export default function AudioPlayerDock({
 
   return (
     <>
-      {!isPlayerExpanded ? (
+      {!isPlayerExpanded && (
         <View style={styles.dockPosition} pointerEvents="box-none">
           <View style={styles.miniPlayer}>
             <Pressable
@@ -124,6 +169,7 @@ export default function AudioPlayerDock({
                   color={colors.textInverse}
                 />
               </View>
+
               <View style={styles.miniTrackText}>
                 <Text style={styles.miniTitle} numberOfLines={1}>
                   {track.title}
@@ -133,6 +179,7 @@ export default function AudioPlayerDock({
                 </Text>
               </View>
             </Pressable>
+
             <TouchableOpacity
               accessibilityRole="button"
               accessibilityLabel={
@@ -148,6 +195,7 @@ export default function AudioPlayerDock({
                 color={colors.textPrimary}
               />
             </TouchableOpacity>
+
             <TouchableOpacity
               accessibilityRole="button"
               accessibilityLabel="Close player"
@@ -155,8 +203,13 @@ export default function AudioPlayerDock({
               onPress={closePlayer}
               activeOpacity={0.7}
             >
-              <Ionicons name="close" size={19} color={colors.textSecondary} />
+              <Ionicons
+                name="close"
+                size={19}
+                color={colors.textSecondary}
+              />
             </TouchableOpacity>
+
             <View style={styles.miniProgressTrack}>
               <View
                 style={[
@@ -167,9 +220,9 @@ export default function AudioPlayerDock({
             </View>
           </View>
         </View>
-      ) : null}
+      )}
 
-      {isPlayerExpanded ? (
+      {isPlayerExpanded && (
         <View style={styles.expandedOverlay}>
           <StatusBar
             hidden={false}
@@ -177,7 +230,11 @@ export default function AudioPlayerDock({
             backgroundColor={colors.background}
             translucent={false}
           />
-          <SafeAreaView style={styles.fullPlayer} edges={["top", "bottom"]}>
+
+          <SafeAreaView
+            style={styles.fullPlayer}
+            edges={["top", "bottom", "left", "right"]}
+          >
             <View style={styles.playerTopBar}>
               <TouchableOpacity
                 accessibilityRole="button"
@@ -192,12 +249,14 @@ export default function AudioPlayerDock({
                   color={colors.textPrimary}
                 />
               </TouchableOpacity>
+
               <View style={styles.nowPlayingLabelWrap}>
                 <Text style={styles.nowPlayingLabel}>NOW PLAYING</Text>
                 <Text style={styles.nowPlayingSubLabel}>
                   YOUR VOICE LIBRARY
                 </Text>
               </View>
+
               <TouchableOpacity
                 accessibilityRole="button"
                 accessibilityLabel="Close player"
@@ -205,14 +264,25 @@ export default function AudioPlayerDock({
                 onPress={closePlayer}
                 style={styles.topIconButton}
               >
-                <Ionicons name="close" size={23} color={colors.textPrimary} />
+                <Ionicons
+                  name="close"
+                  size={23}
+                  color={colors.textPrimary}
+                />
               </TouchableOpacity>
             </View>
 
-            <View style={styles.playerBody}>
+            <ScrollView
+              style={styles.playerScroll}
+              contentContainerStyle={styles.playerBody}
+              showsVerticalScrollIndicator={false}
+              bounces={false}
+              alwaysBounceVertical={false}
+            >
               <View style={styles.heroArtwork}>
                 <View style={styles.heroArtworkCircleOne} />
                 <View style={styles.heroArtworkCircleTwo} />
+
                 <View style={styles.heroWaveform}>
                   {ART_BARS.map((height, index) => (
                     <View
@@ -220,7 +290,7 @@ export default function AudioPlayerDock({
                       style={[
                         styles.heroBar,
                         {
-                          height,
+                          height: height * styles.artworkScale,
                           opacity:
                             index / ART_BARS.length <= progress ? 1 : 0.42,
                         },
@@ -228,8 +298,13 @@ export default function AudioPlayerDock({
                     />
                   ))}
                 </View>
+
                 <View style={styles.heroMicBadge}>
-                  <Ionicons name="mic" size={24} color={colors.textInverse} />
+                  <Ionicons
+                    name="mic"
+                    size={24}
+                    color={colors.textInverse}
+                  />
                 </View>
               </View>
 
@@ -238,10 +313,11 @@ export default function AudioPlayerDock({
                   <Text style={styles.fullTrackTitle} numberOfLines={2}>
                     {track.title}
                   </Text>
-                  <Text style={styles.fullTrackSubtitle}>
+                  <Text style={styles.fullTrackSubtitle} numberOfLines={2}>
                     {track.category} · Saved voice moment
                   </Text>
                 </View>
+
                 <View style={styles.playingBadge}>
                   <Ionicons
                     name="volume-high"
@@ -257,15 +333,20 @@ export default function AudioPlayerDock({
                   minimumValue={0}
                   maximumValue={Math.max(duration, 0.01)}
                   value={Math.min(position, Math.max(duration, 0.01))}
-                  onSlidingComplete={(value) => handleSeek(value)}
+                  onSlidingComplete={handleSeek}
                   minimumTrackTintColor={colors.tealStrong}
                   maximumTrackTintColor={colors.borderStrong}
                   thumbTintColor={colors.tealStrong}
                   disabled={duration <= 0}
                 />
+
                 <View style={styles.timeLabels}>
-                  <Text style={styles.timeText}>{formatTime(position)}</Text>
-                  <Text style={styles.timeText}>{formatTime(duration)}</Text>
+                  <Text style={styles.timeText}>
+                    {formatTime(position)}
+                  </Text>
+                  <Text style={styles.timeText}>
+                    {formatTime(duration)}
+                  </Text>
                 </View>
               </View>
 
@@ -282,6 +363,7 @@ export default function AudioPlayerDock({
                     color={colors.textPrimary}
                   />
                 </TouchableOpacity>
+
                 <TouchableOpacity
                   accessibilityRole="button"
                   accessibilityLabel={
@@ -298,6 +380,7 @@ export default function AudioPlayerDock({
                     style={!isPlaying ? styles.playIconNudge : undefined}
                   />
                 </TouchableOpacity>
+
                 <TouchableOpacity
                   accessibilityRole="button"
                   accessibilityLabel="Forward 15 seconds"
@@ -319,14 +402,17 @@ export default function AudioPlayerDock({
                     size={17}
                     color={colors.textSecondary}
                   />
-                  <Text style={styles.footerActionText}>Personal audio</Text>
+                  <Text style={styles.footerActionText}>
+                    Personal audio
+                  </Text>
                 </View>
+
                 <Text style={styles.speedLabel}>1×</Text>
               </View>
-            </View>
+            </ScrollView>
           </SafeAreaView>
         </View>
-      ) : null}
+      )}
     </>
   );
 }
@@ -335,10 +421,37 @@ function makeStyles(
   colors: ReturnType<typeof useAppTheme>,
   isDark: boolean,
   bottomOffset: number,
+  screenWidth: number,
+  screenHeight: number,
+  isLandscape: boolean,
+  isCompact: boolean,
+  isNarrow: boolean,
+  isTablet: boolean,
 ) {
-  const cardShadow = isDark ? Shadows.dark.floating : Shadows.light.floating;
+  const cardShadow = isDark
+    ? Shadows.dark.floating
+    : Shadows.light.floating;
+
+  const horizontalPadding = isTablet
+    ? Math.min(Layout.screenHorizontal, 40)
+    : isNarrow
+      ? 18
+      : Layout.screenHorizontal;
+
+  const artworkSize = Math.max(
+    120,
+    Math.min(
+      isTablet ? 360 : 310,
+      screenWidth - horizontalPadding * 2,
+      screenHeight * (isLandscape ? 0.36 : isCompact ? 0.27 : 0.33),
+    ),
+  );
+
+  const artworkScale = artworkSize / 310;
 
   return StyleSheet.create({
+    artworkScale,
+
     dockPosition: {
       position: "absolute",
       left: 12,
@@ -347,6 +460,7 @@ function makeStyles(
       zIndex: 100,
       elevation: 20,
     },
+
     miniPlayer: {
       minHeight: 65,
       borderRadius: Radius.lg,
@@ -360,6 +474,7 @@ function makeStyles(
       ...cardShadow,
       overflow: "hidden",
     },
+
     miniTrackArea: {
       flex: 1,
       minWidth: 0,
@@ -368,6 +483,7 @@ function makeStyles(
       gap: Spacing.three,
       paddingVertical: Spacing.two,
     },
+
     miniArtwork: {
       width: 43,
       height: 43,
@@ -376,7 +492,12 @@ function makeStyles(
       alignItems: "center",
       justifyContent: "center",
     },
-    miniTrackText: { flex: 1, minWidth: 0 },
+
+    miniTrackText: {
+      flex: 1,
+      minWidth: 0,
+    },
+
     miniTitle: {
       ...Typography.bodyMedium,
       fontFamily: Fonts?.sans,
@@ -384,6 +505,7 @@ function makeStyles(
       fontWeight: "800",
       color: colors.textPrimary,
     },
+
     miniSubtitle: {
       ...Typography.caption,
       fontFamily: Fonts?.sans,
@@ -391,18 +513,21 @@ function makeStyles(
       marginTop: 2,
       color: colors.textSecondary,
     },
+
     miniControl: {
       width: 40,
       height: 48,
       alignItems: "center",
       justifyContent: "center",
     },
+
     miniClose: {
       width: 32,
       height: 48,
       alignItems: "center",
       justifyContent: "center",
     },
+
     miniProgressTrack: {
       position: "absolute",
       left: 0,
@@ -411,7 +536,12 @@ function makeStyles(
       height: 3,
       backgroundColor: colors.border,
     },
-    miniProgressFill: { height: "100%", backgroundColor: colors.tealStrong },
+
+    miniProgressFill: {
+      height: "100%",
+      backgroundColor: colors.tealStrong,
+    },
+
     expandedOverlay: {
       position: "absolute",
       top: 0,
@@ -422,21 +552,33 @@ function makeStyles(
       elevation: 9999,
       backgroundColor: colors.background,
     },
-    fullPlayer: { flex: 1, backgroundColor: colors.background },
+
+    fullPlayer: {
+      flex: 1,
+      minWidth: 0,
+      backgroundColor: colors.background,
+    },
+
     playerTopBar: {
-      paddingHorizontal: Layout.screenHorizontal,
-      minHeight: 66,
+      paddingHorizontal: horizontalPadding,
+      minHeight: isCompact ? 52 : 66,
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "space-between",
     },
+
     topIconButton: {
       width: 42,
       height: 42,
       alignItems: "center",
       justifyContent: "center",
     },
-    nowPlayingLabelWrap: { alignItems: "center", gap: 3 },
+
+    nowPlayingLabelWrap: {
+      alignItems: "center",
+      gap: 3,
+    },
+
     nowPlayingLabel: {
       ...Typography.caption,
       fontFamily: Fonts?.sans,
@@ -445,6 +587,7 @@ function makeStyles(
       fontWeight: "900",
       color: colors.textPrimary,
     },
+
     nowPlayingSubLabel: {
       ...Typography.caption,
       fontFamily: Fonts?.sans,
@@ -453,18 +596,27 @@ function makeStyles(
       fontWeight: "700",
       color: colors.textTertiary,
     },
-    playerBody: {
+
+    playerScroll: {
       flex: 1,
-      paddingHorizontal: Layout.screenHorizontal,
-      paddingTop: Spacing.four,
-      paddingBottom: Spacing.six,
-      justifyContent: "space-evenly",
     },
+
+    playerBody: {
+      flexGrow: 1,
+      alignItems: "center",
+      justifyContent: isLandscape ? "flex-start" : "space-evenly",
+      paddingHorizontal: horizontalPadding,
+      paddingTop: isCompact ? 8 : Spacing.four,
+      paddingBottom: isCompact ? 12 : Spacing.six,
+      gap: isCompact ? 12 : 16,
+    },
+
     heroArtwork: {
       alignSelf: "center",
-      width: "100%",
-      maxWidth: 310,
+      width: artworkSize,
+      maxWidth: "100%",
       aspectRatio: 1,
+      flexShrink: 0,
       borderRadius: Radius.xl,
       overflow: "hidden",
       alignItems: "center",
@@ -473,6 +625,7 @@ function makeStyles(
       borderWidth: 1,
       borderColor: colors.border,
     },
+
     heroArtworkCircleOne: {
       position: "absolute",
       width: "95%",
@@ -483,6 +636,7 @@ function makeStyles(
         ? "rgba(198, 229, 205, 0.12)"
         : "rgba(40, 87, 65, 0.12)",
     },
+
     heroArtworkCircleTwo: {
       position: "absolute",
       width: "72%",
@@ -493,26 +647,29 @@ function makeStyles(
         ? "rgba(198, 229, 205, 0.2)"
         : "rgba(40, 87, 65, 0.18)",
     },
+
     heroWaveform: {
       width: "76%",
-      height: 90,
+      height: artworkSize * 0.29,
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "center",
-      gap: 3,
+      gap: artworkSize < 200 ? 2 : 3,
     },
+
     heroBar: {
       flex: 1,
-      maxWidth: 6,
+      maxWidth: Math.max(3, 6 * artworkScale),
       borderRadius: Radius.pill,
       backgroundColor: isDark ? "#B9DBC5" : "#2F6B50",
     },
+
     heroMicBadge: {
       position: "absolute",
-      bottom: 23,
-      right: 23,
-      width: 48,
-      height: 48,
+      bottom: artworkSize * 0.075,
+      right: artworkSize * 0.075,
+      width: Math.max(36, artworkSize * 0.155),
+      height: Math.max(36, artworkSize * 0.155),
       borderRadius: Radius.pill,
       alignItems: "center",
       justifyContent: "center",
@@ -520,21 +677,30 @@ function makeStyles(
       borderWidth: 3,
       borderColor: isDark ? "#172B2A" : "#DDEBE1",
     },
+
     trackHeading: {
+      width: "100%",
+      maxWidth: isTablet ? 480 : undefined,
       flexDirection: "row",
       alignItems: "center",
       gap: Spacing.three,
-      marginTop: Spacing.four,
+      marginTop: isCompact ? 0 : Spacing.two,
     },
-    trackHeadingText: { flex: 1, minWidth: 0 },
+
+    trackHeadingText: {
+      flex: 1,
+      minWidth: 0,
+    },
+
     fullTrackTitle: {
       ...Typography.headline,
       fontFamily: Fonts?.serif,
-      fontSize: 24,
-      lineHeight: 30,
+      fontSize: isNarrow ? 21 : isTablet ? 28 : 24,
+      lineHeight: isNarrow ? 27 : isTablet ? 34 : 30,
       fontWeight: "800",
       color: colors.textPrimary,
     },
+
     fullTrackSubtitle: {
       ...Typography.body,
       fontFamily: Fonts?.sans,
@@ -542,6 +708,7 @@ function makeStyles(
       marginTop: 4,
       color: colors.textSecondary,
     },
+
     playingBadge: {
       width: 38,
       height: 38,
@@ -552,13 +719,24 @@ function makeStyles(
         ? "rgba(92, 138, 113, 0.16)"
         : "rgba(92, 138, 113, 0.1)",
     },
-    progressArea: { marginTop: Spacing.two },
-    progressSlider: { width: "100%", height: 34 },
+
+    progressArea: {
+      width: "100%",
+      maxWidth: isTablet ? 480 : undefined,
+      marginTop: isCompact ? 0 : Spacing.two,
+    },
+
+    progressSlider: {
+      width: "100%",
+      height: 34,
+    },
+
     timeLabels: {
       flexDirection: "row",
       justifyContent: "space-between",
       marginTop: -2,
     },
+
     timeText: {
       ...Typography.caption,
       fontFamily: Fonts?.sans,
@@ -566,52 +744,69 @@ function makeStyles(
       color: colors.textSecondary,
       fontSize: 11,
     },
+
     mainControls: {
+      width: "100%",
+      maxWidth: isTablet ? 400 : undefined,
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "center",
-      gap: Spacing.eight,
-      marginTop: Spacing.three,
+      gap: isNarrow ? 18 : isTablet ? 48 : 32,
+      marginTop: isCompact ? 0 : Spacing.three,
     },
+
     skipControl: {
-      width: 48,
+      width: isNarrow ? 42 : 48,
       height: 54,
       alignItems: "center",
       justifyContent: "center",
     },
+
     mainPlayButton: {
-      width: 70,
-      height: 70,
+      width: isCompact ? 60 : 70,
+      height: isCompact ? 60 : 70,
       borderRadius: Radius.pill,
       alignItems: "center",
       justifyContent: "center",
       backgroundColor: colors.tealStrong,
       ...cardShadow,
     },
-    playIconNudge: { marginLeft: 4 },
+
+    playIconNudge: {
+      marginLeft: 4,
+    },
+
     footerActions: {
+      width: "100%",
+      maxWidth: isTablet ? 480 : undefined,
       flexDirection: "row",
       justifyContent: "space-between",
       alignItems: "center",
-      marginTop: Spacing.three,
+      marginTop: isCompact ? 0 : Spacing.three,
     },
+
     footerActionItem: {
       flexDirection: "row",
       alignItems: "center",
       gap: Spacing.two,
     },
+
     footerActionText: {
       ...Typography.caption,
       fontFamily: Fonts?.sans,
       color: colors.textSecondary,
       fontSize: 11,
     },
+
     speedLabel: {
       ...Typography.label,
       fontFamily: Fonts?.sans,
       color: colors.textSecondary,
       fontSize: 12,
     },
-    pressed: { opacity: 0.75 },
+
+    pressed: {
+      opacity: 0.75,
+    },
   });
 }

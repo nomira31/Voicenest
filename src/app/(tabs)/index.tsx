@@ -1,3 +1,4 @@
+import { ImportAudioCard } from "@/components/import/import-audio-card";
 import { useAppDialog } from "@/components/ui/app-dialog";
 import {
   Fonts,
@@ -7,6 +8,7 @@ import {
   Spacing,
   Typography,
   useAppTheme,
+  useResponsiveLayout,
   type Theme,
 } from "@/constants/theme";
 import { useRecordingModal } from "@/contexts/recording-modal-context";
@@ -14,6 +16,7 @@ import { useRecordings } from "@/contexts/recordings-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { useRouter } from "expo-router";
+import React from "react";
 import {
   Image,
   ScrollView,
@@ -67,7 +70,8 @@ export default function HomeScreen() {
   const colors = useAppTheme();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
-  const styles = createStyles(colors, isDark);
+  const responsive = useResponsiveLayout();
+  const styles = createStyles(colors, isDark, responsive);
   const router = useRouter();
   const { openRecordModal } = useRecordingModal();
   const { recordings, playRecording, currentPlayingId, isPlaying } = useRecordings();
@@ -115,7 +119,9 @@ export default function HomeScreen() {
                 activeOpacity={0.8}
               >
                 <Image
-                  source={{ uri: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80" }}
+                  source={{
+                    uri: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80",
+                  }}
                   style={styles.avatarImage}
                 />
               </TouchableOpacity>
@@ -159,19 +165,7 @@ export default function HomeScreen() {
                 </View>
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[styles.quickCard, { backgroundColor: colors.surfaceSage }]}
-                onPress={() => handleQuickAction("import")}
-                activeOpacity={0.8}
-              >
-                <View style={[styles.quickIcon, { backgroundColor: colors.backgroundElevated }]}>
-                  <Ionicons name="cloud-download-outline" size={20} color={colors.primary} />
-                </View>
-                <View style={styles.quickText}>
-                  <Text style={styles.quickTitle}>Import audio</Text>
-                  <Text style={styles.quickCaption}>Keep it all close</Text>
-                </View>
-              </TouchableOpacity>
+              <ImportAudioCard />
 
               <TouchableOpacity
                 style={[styles.quickCard, { backgroundColor: colors.surfaceTeal }]}
@@ -190,7 +184,10 @@ export default function HomeScreen() {
 
             <View style={styles.sectionHeaderSpaced}>
               <Text style={styles.sectionTitle}>Recent voice moments</Text>
-              <TouchableOpacity style={styles.textAction} onPress={() => router.push("/(tabs)/library")}>
+              <TouchableOpacity
+                style={styles.textAction}
+                onPress={() => router.push("/(tabs)/library")}
+              >
                 <Text style={styles.textActionLabel}>See all ({recordings.length})</Text>
                 <Ionicons name="chevron-forward" size={14} color={colors.tealStrong} />
               </TouchableOpacity>
@@ -227,7 +224,9 @@ export default function HomeScreen() {
               })}
               {recentList.length === 0 ? (
                 <View style={styles.emptyContainer}>
-                  <Text style={styles.emptyText}>No voice recordings yet. Tap 'Record a voice' to start.</Text>
+                  <Text style={styles.emptyText}>
+                    No voice recordings yet. Tap 'Record a voice' to start.
+                  </Text>
                 </View>
               ) : null}
             </View>
@@ -239,42 +238,221 @@ export default function HomeScreen() {
   );
 }
 
-function createStyles(colors: Theme, isDark: boolean) {
+function createStyles(colors: Theme, isDark: boolean, responsive: ReturnType<typeof useResponsiveLayout>) {
   const cardShadow = isDark ? Shadows.dark.card : Shadows.light.card;
 
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
-    content: { paddingHorizontal: Layout.screenHorizontal, paddingTop: Spacing.two, paddingBottom: Spacing.eight + 88 },
-    pageWidth: { width: "100%", maxWidth: Layout.contentMaxWidth, alignSelf: "center" },
-    header: { paddingTop: Spacing.one, marginBottom: Spacing.five, flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: Spacing.three },
+    content: {
+      paddingHorizontal: responsive.horizontalPadding,
+      paddingTop: Spacing.two,
+      paddingBottom: Spacing.eight + 88,
+    },
+    pageWidth: { width: "100%", maxWidth: responsive.contentMaxWidth, alignSelf: "center" },
+    header: {
+      paddingTop: Spacing.one,
+      marginBottom: Spacing.five,
+      flexDirection: "row",
+      alignItems: "flex-start",
+      justifyContent: "space-between",
+      gap: Spacing.three,
+    },
     headerText: { flex: 1, minWidth: 0 },
-    eyebrowRow: { flexDirection: "row", alignItems: "center", gap: Spacing.one, marginBottom: Spacing.one },
-    eyebrow: { ...Typography.caption, fontFamily: Fonts?.sans, letterSpacing: 1.2, fontWeight: "700", color: colors.tealStrong },
-    greeting: { ...Typography.display, fontFamily: Fonts?.serif, color: colors.textPrimary },
-    subtitle: { ...Typography.caption, fontFamily: Fonts?.sans, fontSize: 13, lineHeight: 18, marginTop: Spacing.half, color: colors.textSecondary },
-    avatar: { width: Layout.iconButton, height: Layout.iconButton, borderRadius: Radius.pill, overflow: "hidden", backgroundColor: colors.surfaceSky, borderWidth: 1, borderColor: colors.border, ...cardShadow },
+    eyebrowRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Spacing.one,
+      marginBottom: Spacing.one,
+    },
+    eyebrow: {
+      ...Typography.caption,
+      fontFamily: Fonts?.sans,
+      letterSpacing: 1.2,
+      fontWeight: "700",
+      color: colors.tealStrong,
+    },
+    greeting: { ...Typography.display, fontFamily: Fonts?.serif, fontSize: responsive.isCompact ? 27 : responsive.isTablet ? 34 : 30, lineHeight: responsive.isCompact ? 33 : responsive.isTablet ? 40 : 36, color: colors.textPrimary },
+    subtitle: {
+      ...Typography.caption,
+      fontFamily: Fonts?.sans,
+      fontSize: 13,
+      lineHeight: 18,
+      marginTop: Spacing.half,
+      color: colors.textSecondary,
+    },
+    avatar: {
+      width: Layout.iconButton,
+      height: Layout.iconButton,
+      borderRadius: Radius.pill,
+      overflow: "hidden",
+      backgroundColor: colors.surfaceSky,
+      borderWidth: 1,
+      borderColor: colors.border,
+      ...cardShadow,
+    },
     avatarImage: { width: "100%", height: "100%", resizeMode: "cover" },
-    searchBox: { height: Layout.controlHeight, paddingHorizontal: Spacing.four, borderRadius: Radius.xl, flexDirection: "row", alignItems: "center", gap: Spacing.two, backgroundColor: colors.backgroundElevated, borderWidth: 1, borderColor: colors.border, marginBottom: Spacing.five, ...cardShadow },
-    searchPlaceholder: { ...Typography.body, fontFamily: Fonts?.sans, fontSize: 14, color: colors.textTertiary, flex: 1 },
-    quickActions: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: Spacing.three, marginBottom: Spacing.six },
-    quickCard: { width: "48.5%", minHeight: 84, paddingHorizontal: Spacing.three, paddingVertical: Spacing.three, borderRadius: Radius.lg, flexDirection: "row", alignItems: "center", gap: Spacing.two, borderWidth: 1, borderColor: colors.border, ...cardShadow },
-    quickIcon: { width: 38, height: 38, borderRadius: Radius.sm, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border },
+    searchBox: {
+      height: Layout.controlHeight,
+      paddingHorizontal: Spacing.four,
+      borderRadius: Radius.xl,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Spacing.two,
+      backgroundColor: colors.backgroundElevated,
+      borderWidth: 1,
+      borderColor: colors.border,
+      marginBottom: Spacing.five,
+      ...cardShadow,
+    },
+    searchPlaceholder: {
+      ...Typography.body,
+      fontFamily: Fonts?.sans,
+      fontSize: 14,
+      color: colors.textTertiary,
+      flex: 1,
+    },
+    quickActions: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      justifyContent: "space-between",
+      rowGap: Spacing.three,
+      marginBottom: Spacing.six,
+    },
+    quickCard: {
+      width: responsive.width < 360 ? "100%" : "48.5%",
+      minHeight: responsive.isShort ? 72 : 84,
+      paddingHorizontal: responsive.isCompact ? Spacing.two : Spacing.three,
+      paddingVertical: Spacing.three,
+      borderRadius: Radius.lg,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Spacing.two,
+      borderWidth: 1,
+      borderColor: colors.border,
+      ...cardShadow,
+    },
+    quickIcon: {
+      width: 38,
+      height: 38,
+      borderRadius: Radius.sm,
+      alignItems: "center",
+      justifyContent: "center",
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
     quickText: { flex: 1, minWidth: 0, justifyContent: "center" },
-    quickTitle: { ...Typography.caption, fontFamily: Fonts?.sans, fontWeight: "700", fontSize: 12, lineHeight: 16, color: colors.textPrimary },
-    quickCaption: { ...Typography.caption, fontFamily: Fonts?.sans, fontSize: 10, lineHeight: 14, marginTop: 2, color: colors.textSecondary },
-    sectionHeaderSpaced: { marginBottom: Spacing.three, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: Spacing.three },
-    sectionTitle: { ...Typography.headline, fontFamily: Fonts?.serif, fontSize: 21, lineHeight: 26, color: colors.textPrimary },
-    textAction: { flexDirection: "row", alignItems: "center", gap: Spacing.half, paddingVertical: Spacing.one, minHeight: Layout.minTouchTarget, justifyContent: "center" },
-    textActionLabel: { ...Typography.caption, fontFamily: Fonts?.sans, fontWeight: "700", color: colors.tealStrong },
+    quickTitle: {
+      ...Typography.caption,
+      fontFamily: Fonts?.sans,
+      fontWeight: "700",
+      fontSize: responsive.isCompact ? 11 : 12,
+      lineHeight: 16,
+      color: colors.textPrimary,
+    },
+    quickCaption: {
+      ...Typography.caption,
+      fontFamily: Fonts?.sans,
+      fontSize: 10,
+      lineHeight: 14,
+      marginTop: 2,
+      color: colors.textSecondary,
+    },
+    sectionHeaderSpaced: {
+      marginBottom: Spacing.three,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: Spacing.three,
+    },
+    sectionTitle: {
+      ...Typography.headline,
+      fontFamily: Fonts?.serif,
+      fontSize: 21,
+      lineHeight: 26,
+      color: colors.textPrimary,
+    },
+    textAction: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Spacing.half,
+      paddingVertical: Spacing.one,
+      minHeight: Layout.minTouchTarget,
+      justifyContent: "center",
+    },
+    textActionLabel: {
+      ...Typography.caption,
+      fontFamily: Fonts?.sans,
+      fontWeight: "700",
+      color: colors.tealStrong,
+    },
     upcomingList: { gap: Spacing.three },
-    upcomingCard: { minHeight: 80, padding: Spacing.three, borderRadius: Radius.lg, flexDirection: "row", alignItems: "center", gap: Spacing.three, backgroundColor: colors.backgroundElevated, borderWidth: 1, borderColor: colors.border, ...cardShadow },
-    upcomingIcon: { width: 44, height: 44, borderRadius: Radius.md, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border },
+    upcomingCard: {
+      minHeight: 80,
+      padding: Spacing.three,
+      borderRadius: Radius.lg,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Spacing.three,
+      backgroundColor: colors.backgroundElevated,
+      borderWidth: 1,
+      borderColor: colors.border,
+      ...cardShadow,
+    },
+    upcomingIcon: {
+      width: 44,
+      height: 44,
+      borderRadius: Radius.md,
+      alignItems: "center",
+      justifyContent: "center",
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
     upcomingInfo: { flex: 1, minWidth: 0 },
-    upcomingTitle: { ...Typography.label, fontFamily: Fonts?.sans, fontSize: 14, fontWeight: "700", color: colors.textPrimary },
-    upcomingTime: { ...Typography.caption, fontFamily: Fonts?.sans, fontWeight: "700", marginTop: 2, color: colors.tealStrong },
-    upcomingDetail: { ...Typography.caption, fontFamily: Fonts?.sans, marginTop: 2, color: colors.textSecondary },
-    playButton: { width: 34, height: 34, borderRadius: Radius.pill, alignItems: "center", justifyContent: "center", backgroundColor: colors.backgroundSubtle, borderWidth: 1, borderColor: colors.border },
-    emptyContainer: { padding: Spacing.six, alignItems: "center", justifyContent: "center", borderRadius: Radius.lg, backgroundColor: colors.backgroundElevated, borderWidth: 1, borderColor: colors.border },
-    emptyText: { ...Typography.body, fontFamily: Fonts?.sans, fontSize: 13, color: colors.textTertiary, textAlign: "center" },
+    upcomingTitle: {
+      ...Typography.label,
+      fontFamily: Fonts?.sans,
+      fontSize: 14,
+      fontWeight: "700",
+      color: colors.textPrimary,
+    },
+    upcomingTime: {
+      ...Typography.caption,
+      fontFamily: Fonts?.sans,
+      fontWeight: "700",
+      marginTop: 2,
+      color: colors.tealStrong,
+    },
+    upcomingDetail: {
+      ...Typography.caption,
+      fontFamily: Fonts?.sans,
+      marginTop: 2,
+      color: colors.textSecondary,
+    },
+    playButton: {
+      width: 34,
+      height: 34,
+      borderRadius: Radius.pill,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.backgroundSubtle,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    emptyContainer: {
+      padding: Spacing.six,
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: Radius.lg,
+      backgroundColor: colors.backgroundElevated,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    emptyText: {
+      ...Typography.body,
+      fontFamily: Fonts?.sans,
+      fontSize: 13,
+      color: colors.textTertiary,
+      textAlign: "center",
+    },
   });
 }

@@ -3,12 +3,17 @@
     "name": "VoiceNest",
     "slug": "voicenote-app-ai",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "voicenoteappai",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/images/icon.png"
+      "supportsTablet": true,
+      "requireFullScreen": true,
+      "bundleIdentifier": "com.nomira.voicenoteappai",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -19,6 +24,9 @@
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.nomira.voicenoteappai",
+      "androidNavigationBar": {
+        "visible": "immersive"
+      },
       "permissions": [
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
@@ -48,13 +56,34 @@
       "expo-notifications",
       "expo-audio",
       "expo-sqlite",
-      "expo-sharing",
       [
         "react-native-audio-api",
         {
           "iosBackgroundMode": false,
           "androidPermissions": [],
           "androidForegroundService": false
+        }
+      ],
+      [
+        "expo-share-intent",
+        {
+          "iosActivationRules": {
+            "NSExtensionActivationSupportsText": true,
+            "NSExtensionActivationSupportsWebURLWithMaxCount": 1,
+            "NSExtensionActivationSupportsWebPageWithMaxCount": 1,
+            "NSExtensionActivationSupportsFileWithMaxCount": 10
+          },
+          "androidIntentFilters": [
+            "text/*",
+            "audio/*",
+            "application/ogg",
+            "application/octet-stream"
+          ],
+          "androidMultiIntentFilters": [
+            "audio/*",
+            "application/ogg",
+            "application/octet-stream"
+          ]
         }
       ],
       [
@@ -74,7 +103,24 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "a7d96e5f-0a3d-48cf-936a-dd39c931f181"
+        "projectId": "a7d96e5f-0a3d-48cf-936a-dd39c931f181",
+        "build": {
+          "experimental": {
+            "ios": {
+              "appExtensions": [
+                {
+                  "targetName": "ShareExtension",
+                  "bundleIdentifier": "com.nomira.voicenoteappai.share-extension",
+                  "entitlements": {
+                    "com.apple.security.application-groups": [
+                      "group.com.nomira.voicenoteappai"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        }
       }
     }
   }
